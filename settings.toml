@@ -1,0 +1,26 @@
+[default]
+APP_NAME = 'AssetManagementService'
+DB_MIN_CONN = 5
+DB_MAX_CONN = 20
+DB_RECYCLE_SECONDS = 300
+DB_STALE_TIMEOUT_SECONDS = 300
+SCHEDULER_CRON_HOUR = 10
+RECREATE_TABLES = false
+
+[development]
+DB_NAME = 'amx'
+DB_HOST = '127.0.0.1'
+DB_PORT = 3306
+DB_USER = 'root'
+DB_PASSWD = 'liurusi321'
+ACCOUNT_SECRET_AES_KEY = 'secrets/key'
+ACCOUNT_SECRET_AES_IV = 'secrets/iv'
+
+[production]
+DB_NAME = 'libertyland_a'
+DB_HOST = '10.75.0.29'
+DB_PORT = 3306
+DB_USER = 'root'
+DB_PASSWD = 'K2T35JwVRlJGMJ0K'
+ACCOUNT_SECRET_AES_KEY = '/run/secrets/ams_account_secret_key'
+ACCOUNT_SECRET_AES_IV = '/run/secrets/ams_account_secret_iv'
