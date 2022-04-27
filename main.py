@@ -67,10 +67,11 @@ app.error_handler = AMSErrorHandler()
 # async def decrypt_body(request: Request):
 #     await request.receive_body()
 #     request.ctx.decrypt_body = decrypt(request.body)
-
+#
 # @app.on_response
 # async def encrypt_body(request: Request, response: HTTPResponse):
-    # return text(encrypt(response.body))
+#     return text(encrypt(response.body))
+
 
 if __name__ == "__main__":
     logger.info(db_url)

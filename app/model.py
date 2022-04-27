@@ -1,3 +1,9 @@
+import json
+from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal
+from typing import Dict, Union
+
 import sqlalchemy
 from arrow import Arrow
 from dateutil import tz
@@ -6,6 +12,17 @@ from sqlalchemy.engine import Row
 
 metadata = sqlalchemy.MetaData()
 
+
+@dataclass
+class AccountBalance:
+    balance: Decimal
+    asset: str
+
+    @property
+    def json(self):
+        return dict(balance=self.balance, asset=self.asset)
+
+
 Account = sqlalchemy.Table(
     "Account",
     metadata,
@@ -13,7 +30,7 @@ Account = sqlalchemy.Table(
     sqlalchemy.Column("sequence", sqlalchemy.BigInteger, default=0, server_default=text("0"), nullable=False),
     sqlalchemy.Column("address", sqlalchemy.String(length=56), nullable=False),
     sqlalchemy.Column("secret", sqlalchemy.String(length=100), nullable=False),
-    sqlalchemy.Column("balances", sqlalchemy.JSON()),
+    sqlalchemy.Column("balances", sqlalchemy.JSON(), default=[]),
     sqlalchemy.Column(
         'created_at', sqlalchemy.TIMESTAMP(),
         server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"),
@@ -64,5 +81,27 @@ def dict_row(row: Row) -> dict:
     d_row = dict(row)
     d_row['created_at'] = Arrow.fromdatetime(d_row['created_at'], tzinfo=tz.tzutc()).to(tz.gettz())
     d_row['updated_at'] = Arrow.fromdatetime(d_row['updated_at'], tzinfo=tz.tzutc()).to(tz.gettz())
+    d_row['balances'] = json.loads(d_row['balances'])
     d_row.pop('secret', None)
     return d_row
+
+
+class AccountRow:
+    @classmethod
+    def to_json(cls, row: Row):
+        d_row: Dict[str, Union[datetime, str]] = dict(row)
+        d_row['created_at'] = Arrow.fromdatetime(d_row['created_at'], tzinfo=tz.tzutc()).to(tz.gettz())
+        d_row['updated_at'] = Arrow.fromdatetime(d_row['updated_at'], tzinfo=tz.tzutc()).to(tz.gettz())
+        if isinstance(d_row['balances'], str):
+            d_row['balances'] = json.loads(d_row['balances'])
+        d_row.pop('secret', None)
+        return d_row
+
+
+class TransactionRow:
+    @classmethod
+    def to_json(cls, row: Row):
+        d_row = dict(row)
+        d_row['created_at'] = Arrow.fromdatetime(d_row['created_at'], tzinfo=tz.tzutc()).to(tz.gettz())
+        d_row['updated_at'] = Arrow.fromdatetime(d_row['updated_at'], tzinfo=tz.tzutc()).to(tz.gettz())
+        return d_row

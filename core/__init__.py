@@ -13,3 +13,11 @@ class AMSCore:
     @classmethod
     def conn(cls):
         return cls.db().connection()
+
+    @classmethod
+    def format_query(cls, query: str, values: dict):
+        for k, v in values.items():
+            query = query.replace(f":{k}", str(v))
+
+        return query
+
