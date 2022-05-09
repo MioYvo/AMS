@@ -14,4 +14,52 @@ class AssetNotTrusted(SanicException):
 
     @property
     def message(self):
-        return f"Asset {self.extra['asset']} not trusted"
+        return f"Account {self.extra['addr']}'s Asset {self.extra['asset']} not trusted"
+
+
+class TransactionNotFound(SanicException):
+    status_code = 40003
+
+    @property
+    def message(self):
+        return f"Transaction {self.extra['tx_hash']} not found"
+
+
+class TransactionsOfAccountNotFound(SanicException):
+    status_code = 40004
+
+    @property
+    def message(self):
+        return f"Transactions of Account {self.extra['address']} not found"
+
+
+class TransactionsBuildFailed(SanicException):
+    status_code = 40005
+
+    @property
+    def message(self):
+        return f"Transaction build failed: {self.extra}"
+
+
+class TransactionsExpired(SanicException):
+    status_code = 40006
+
+    @property
+    def message(self):
+        return f"Transaction Expired: {self.extra}"
+
+
+class InsufficientFunds(SanicException):
+    status_code = 40007
+
+    @property
+    def message(self):
+        return f"Insufficient Funds for amount {self.extra['amount']} of {self.extra['addr']}"
+
+
+class TransactionsSendFailed(SanicException):
+    status_code = 40008
+
+    @property
+    def message(self):
+        return f"Transaction send failed: {self.extra}"

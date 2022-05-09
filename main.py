@@ -4,7 +4,8 @@ from sanic.handlers import ErrorHandler
 from sanic.log import logger
 from sqlalchemy.sql.ddl import DropTable, CreateTable
 
-from app.account.api import account_v1_bp
+from app.account.api import accounts_v1_bp
+from app.transaction.api import transactions_v1_bp
 from app.model import Transaction, Account
 
 from config import settings
@@ -13,9 +14,10 @@ app = Sanic(settings.APP_NAME)
 app.config.FALLBACK_ERROR_FORMAT = "json"
 # app.config.DEBUG = True
 
-app.blueprint(account_v1_bp)
+app.blueprint([accounts_v1_bp, transactions_v1_bp])
 
-db_url = f'mysql+aiomysql://{settings.DB_USER}:{settings.DB_PASSWD}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}'
+db_url = f'mysql+aiomysql://{settings.DB_USER}:{settings.DB_PASSWD}@' \
+         f'{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}'
 
 database = Database(
     db_url,

@@ -1,9 +1,11 @@
-from typing import Optional
+from typing import Optional, List
 
 from json import dumps as json_dumps
+from enum import Enum, unique
 
 import ujson
 from sanic import Blueprint, Request, json
+from sanic.exceptions import InvalidUsage
 from sqlalchemy.engine import Row
 from stellar_sdk import Keypair
 
@@ -11,36 +13,20 @@ from core import ams_crypt, AMSCore
 from core.ams_crypt import AMSCrypt
 from core.encoder import MyEncoder
 from exceptions import AddressNotFound
-from app.model import Account, AccountRow
+from app.model import Account, AccountRow, TransactionRow
 
-account_v1_bp = Blueprint("account", version=1, url_prefix='account')
+accounts_v1_bp = Blueprint("accounts", version=1, url_prefix='accounts')
 
 
-@account_v1_bp.get('/<account_address:str>')
+@accounts_v1_bp.get('/<account_address:str>')
 async def get_account_by_address(request: Request, account_address: str):
-    """This is a simple foo handler
-
-    Now we will add some more details
+    """Get account info by address.
 
     openapi:
     ---
-    operationId: fooDots
+    operationId: get_account_by_address
     tags:
-      - one
-      - two
-    parameters:
-      - name: account_address
-        in: query
-        description: How many items to return at one time (max 100)
-        required: false
-        param:
-          integer
-        schema:
-          type: integer
-          format: int32
-    responses:
-      '200':
-        description: Just some dots
+      - account
     """
     query = "SELECT * FROM Account WHERE address = :completed"
     async with AMSCore.conn() as conn:
@@ -50,7 +36,7 @@ async def get_account_by_address(request: Request, account_address: str):
     return json(AccountRow.to_json(row), dumps=json_dumps, cls=MyEncoder)
 
 
-@account_v1_bp.post('/<account_address:str>/asset')
+@accounts_v1_bp.post('/<account_address:str>/asset')
 async def create_account_asset(request: Request, account_address: str):
     """
 
@@ -69,7 +55,7 @@ SET
     balances=JSON_ARRAY_APPEND(balances, '$', CAST('{"asset": ":asset", "balance": 0}' AS JSON)),
     sequence=sequence+1
 WHERE address=':account_address' AND sequence=:sequence AND JSON_SEARCH(balances, 'all', ':asset') IS NULL"""
-            row = await conn.execute(AMSCore.format_query(query, values={
+            await conn.execute(AMSCore.format_query(query, values={
                 'asset': asset, 'account_address': account_address, "sequence": row.sequence
             }))
 
@@ -78,7 +64,7 @@ WHERE address=':account_address' AND sequence=:sequence AND JSON_SEARCH(balances
     return json(AccountRow.to_json(row), dumps=json_dumps, cls=MyEncoder)
 
 
-@account_v1_bp.get('/<account_address:str>/sequence')
+@accounts_v1_bp.get('/<account_address:str>/sequence')
 async def account_address_sequence(request: Request, account_address: str):
     """
     """
@@ -94,7 +80,7 @@ async def account_address_sequence(request: Request, account_address: str):
     )
 
 
-@account_v1_bp.get('/<account_address:str>/balances')
+@accounts_v1_bp.get('/<account_address:str>/balances')
 async def account_address_sequence(request: Request, account_address: str):
     """
     """
@@ -109,8 +95,54 @@ async def account_address_sequence(request: Request, account_address: str):
         }, dumps=ujson.dumps
     )
 
+@unique
+class Order(str, Enum):
+    ASC = "ASC"
+    DESC = "DESC"
 
-@account_v1_bp.post('/')
+
+@accounts_v1_bp.get('/<account_address:str>/transactions')
+async def account_address_transactions(request: Request, account_address: str):
+    desc_query = 'SELECT * FROM Transaction WHERE ' \
+                 '(`from`=:account_address OR `to`=:account_address) ' \
+                 'AND `id`<:cursor ' \
+                 'ORDER BY `id` DESC ' \
+                 'LIMIT :limit'
+
+    asc_query = 'SELECT * FROM Transaction WHERE ' \
+                '(`from`=:account_address OR `to`=:account_address) ' \
+                'AND `id`>:cursor ' \
+                'ORDER BY `id` ASC ' \
+                'LIMIT :limit'
+
+    limit = int(request.args.get('limit', 30))
+    cursor = int(request.args.get('cursor', 0))
+    try:
+        order = getattr(Order, request.args.get('order', 'DESC'))
+    except:
+        # return json([])
+        raise InvalidUsage(message=f"Wrong args <order>: {request.args.get('order')}")
+    else:
+        if order is Order.DESC:
+            query = desc_query
+            if not cursor:
+                cursor = 18446744073709551615
+        else:
+            query = asc_query
+
+    async with AMSCore.conn() as conn:
+        rows: Optional[List[Row]] = await conn.fetch_all(
+            query,
+            values=dict(cursor=cursor, limit=limit, account_address=account_address)
+        )
+    if not rows:
+        return json([])
+        # raise TransactionsOfAccountNotFound(extra=dict(address=account_address))
+
+    return json([TransactionRow.to_json(row) for row in rows], dumps=json_dumps, cls=MyEncoder)
+
+
+@accounts_v1_bp.post('/')
 async def create_account(request: Request):
     """
 

@@ -51,13 +51,14 @@ Transaction = sqlalchemy.Table(
     "Transaction",
     metadata,
     sqlalchemy.Column("id", sqlalchemy.BigInteger, primary_key=True),
-    sqlalchemy.Column("hash", sqlalchemy.String(length=64), nullable=False),
+    sqlalchemy.Column("hash", sqlalchemy.String(length=74), nullable=False),
     sqlalchemy.Column("asset", sqlalchemy.String(length=20), nullable=False),
     sqlalchemy.Column("from", ForeignKey("Account.address"), nullable=False),
     sqlalchemy.Column("to", ForeignKey("Account.address"), nullable=False),
     sqlalchemy.Column("amount", sqlalchemy.Numeric(precision=23, scale=7), nullable=False),
     sqlalchemy.Column("from_sequence", sqlalchemy.BigInteger, nullable=False),
     sqlalchemy.Column("is_success", sqlalchemy.Boolean, nullable=False),
+    sqlalchemy.Column("memo", sqlalchemy.String(length=64), nullable=True),
     sqlalchemy.Column(
         'created_at', sqlalchemy.TIMESTAMP(),
         server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"),
@@ -90,8 +91,10 @@ class AccountRow:
     @classmethod
     def to_json(cls, row: Row):
         d_row: Dict[str, Union[datetime, str]] = dict(row)
-        d_row['created_at'] = Arrow.fromdatetime(d_row['created_at'], tzinfo=tz.tzutc()).to(tz.gettz())
-        d_row['updated_at'] = Arrow.fromdatetime(d_row['updated_at'], tzinfo=tz.tzutc()).to(tz.gettz())
+        d_row['created_at_dt'] = Arrow.fromdatetime(d_row['created_at'], tzinfo=tz.tzutc()).to(tz.gettz())
+        d_row['created_at'] = int(d_row['created_at_dt'].timestamp())
+        d_row['updated_at_dt'] = Arrow.fromdatetime(d_row['updated_at'], tzinfo=tz.tzutc()).to(tz.gettz())
+        d_row['updated_at'] = int(d_row['updated_at_dt'].timestamp())
         if isinstance(d_row['balances'], str):
             d_row['balances'] = json.loads(d_row['balances'])
         d_row.pop('secret', None)
@@ -102,6 +105,9 @@ class TransactionRow:
     @classmethod
     def to_json(cls, row: Row):
         d_row = dict(row)
-        d_row['created_at'] = Arrow.fromdatetime(d_row['created_at'], tzinfo=tz.tzutc()).to(tz.gettz())
-        d_row['updated_at'] = Arrow.fromdatetime(d_row['updated_at'], tzinfo=tz.tzutc()).to(tz.gettz())
+        d_row['created_at_dt'] = Arrow.fromdatetime(d_row['created_at'], tzinfo=tz.tzutc()).to(tz.gettz())
+        d_row['created_at'] = int(d_row['created_at_dt'].timestamp())
+        d_row['updated_at_dt'] = Arrow.fromdatetime(d_row['updated_at'], tzinfo=tz.tzutc()).to(tz.gettz())
+        d_row['updated_at'] = int(d_row['updated_at_dt'].timestamp())
+        d_row['is_success'] = bool(d_row['is_success'])
         return d_row
