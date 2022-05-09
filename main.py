@@ -1,4 +1,4 @@
-from sanic import Sanic
+from sanic import Sanic, Blueprint
 from databases import Database
 from sanic.handlers import ErrorHandler
 from sanic.log import logger
@@ -14,7 +14,8 @@ app = Sanic(settings.APP_NAME)
 app.config.FALLBACK_ERROR_FORMAT = "json"
 # app.config.DEBUG = True
 
-app.blueprint([accounts_v1_bp, transactions_v1_bp])
+bp = Blueprint.group(accounts_v1_bp, transactions_v1_bp, url_prefix='/ams')
+app.blueprint(bp)
 
 db_url = f'mysql+aiomysql://{settings.DB_USER}:{settings.DB_PASSWD}@' \
          f'{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}'

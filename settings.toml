@@ -6,6 +6,7 @@ DB_RECYCLE_SECONDS = 300
 DB_STALE_TIMEOUT_SECONDS = 300
 SCHEDULER_CRON_HOUR = 10
 RECREATE_TABLES = false
+TXN_EXPIRED_SECONDS = 300
 
 [development]
 DB_NAME = 'amx'
@@ -16,11 +17,20 @@ DB_PASSWD = 'liurusi321'
 ACCOUNT_SECRET_AES_KEY = 'secrets/key'
 ACCOUNT_SECRET_AES_IV = 'secrets/iv'
 
-[production]
-DB_NAME = 'libertyland_a'
-DB_HOST = '10.75.0.29'
+[pdxdev]
+DB_NAME = 'amx'
+DB_HOST = '10.80.5.236'
 DB_PORT = 3306
 DB_USER = 'root'
-DB_PASSWD = 'K2T35JwVRlJGMJ0K'
+DB_PASSWD = 'gjZl6qzF760HUX1KjZpRZJfbV'
+ACCOUNT_SECRET_AES_KEY = '/run/secrets/ams_account_secret_key'
+ACCOUNT_SECRET_AES_IV = '/run/secrets/ams_account_secret_iv'
+
+[production]
+DB_NAME = 'amx'
+DB_HOST = '10.80.5.236'
+DB_PORT = 3306
+DB_USER = 'root'
+DB_PASSWD = 'gjZl6qzF760HUX1KjZpRZJfbV'
 ACCOUNT_SECRET_AES_KEY = '/run/secrets/ams_account_secret_key'
 ACCOUNT_SECRET_AES_IV = '/run/secrets/ams_account_secret_iv'

@@ -9,10 +9,11 @@ from sanic import Blueprint, Request, json
 from sqlalchemy.engine import Row
 
 from app.model import Transaction, TransactionRow
+from config import settings
 from core import AMSCore
 from core.encoder import MyEncoder
 from exceptions import TransactionNotFound, TransactionsBuildFailed, TransactionsExpired, AssetNotTrusted, \
-    InsufficientFunds, TransactionsSendFailed
+    InsufficientFunds, TransactionsSendFailed, TransactionsSelfTransfer
 
 transactions_v1_bp = Blueprint("transactions", version=1, url_prefix='transactions')
 
@@ -55,10 +56,13 @@ async def create_transaction_hash(request: Request):
     asset = request.form.get('asset')
     from_addr = request.form.get('from')
     to_addr = request.form.get('to')
-    amount = request.form.get('amount')
+    amount = Decimal(request.form.get('amount'))
     from_sequence = request.form.get('from_sequence')
     memo = request.form.get('memo', '')
     txn_hash = request.form.get('hash', '')
+
+    if from_addr == to_addr:
+        raise TransactionsSelfTransfer()
 
     if txn_hash:
         try:
@@ -67,16 +71,13 @@ async def create_transaction_hash(request: Request):
         except Exception as e:
             raise TransactionsBuildFailed(extra=dict(error=e))
         else:
-            if (Arrow.fromtimestamp(create_at) - Arrow.now()) > timedelta(minutes=5):
+            if (Arrow.now() - Arrow.fromtimestamp(create_at)) > timedelta(seconds=settings.TXN_EXPIRED_SECONDS):
                 raise TransactionsExpired(extra=dict(txn_datetime=create_at))
             if __txn_hash != _txn_hash:
                 raise TransactionsBuildFailed(extra=dict(txn_hash="not valid raw data"))
     else:
         txn_hash, txn_raw = AMSCore.build_txn(asset, from_addr, to_addr, amount, from_sequence)
         create_at = txn_raw['create_at']
-
-    if from_addr == to_addr:
-        raise TransactionsBuildFailed(extra=dict(error='`from` cannot equal to `to`'))
 
     async with AMSCore.conn() as conn:
         query_asset = f"SELECT JSON_SEARCH(balances, 'one', :asset) as asset FROM Account where `address`=:addr;"

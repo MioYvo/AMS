@@ -1,0 +1,62 @@
+version: "2.4"
+
+services:
+  traefik:
+    image: traefik
+    container_name: ams-traefik
+    restart: unless-stopped
+    ports:
+      - "10811:8080"   # for traefik dashboard
+      - "10812:10812"  # ams
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "10"
+    command:
+      [
+        # api
+        "--api.dashboard=true",
+        "--api.insecure=true",
+        # log
+        "--log=true",
+        "--log.level=info",
+        "--accesslog=false",
+        # docker
+        "--providers.docker=true",
+        "--providers.docker.endpoint=unix:///var/run/docker.sock",
+        "--providers.docker.exposedByDefault=false",
+        # entryPoints
+        "--entryPoints.ams.address=:10812"
+      ]
+
+  ams:
+    build: ./
+    image: ams-py
+    scale: 3
+    environment:
+      ENV_FOR_DYNACONF: pdxdev
+      AMS_TXN_EXPIRED_SECONDS: 300
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ams.entrypoints=ams"
+      - "traefik.http.routers.ams.rule=PathPrefix(`/v1/ams`)"
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "1"
+    expose:
+      - 8000
+    secrets:
+      - ams_account_secret_key
+      - ams_account_secret_iv
+    depends_on:
+      - traefik
+
+
+secrets:
+  ams_account_secret_key:
+    file: /home/pdxpytest/AMS/secrets/key
+  ams_account_secret_iv:
+    file: /home/pdxpytest/AMS/secrets/iv

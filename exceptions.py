@@ -63,3 +63,11 @@ class TransactionsSendFailed(SanicException):
     @property
     def message(self):
         return f"Transaction send failed: {self.extra}"
+
+
+class TransactionsSelfTransfer(SanicException):
+    status_code = 40009
+
+    @property
+    def message(self):
+        return "Cannot transfer to self"
