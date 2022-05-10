@@ -13,7 +13,9 @@ from config import settings
 from core import AMSCore
 from core.encoder import MyEncoder
 from exceptions import TransactionNotFound, TransactionsBuildFailed, TransactionsExpired, AssetNotTrusted, \
-    InsufficientFunds, TransactionsSendFailed, TransactionsSelfTransfer
+    InsufficientFunds, TransactionsSendFailed, TransactionsSelfTransfer, AddressNotFound
+
+DEM = settings.AMS_DECIMAL
 
 transactions_v1_bp = Blueprint("transactions", version=1, url_prefix='transactions')
 
@@ -43,8 +45,8 @@ async def create_transaction_hash(request: Request):
                                              "amount": amount, "from_sequence": from_sequence})
     try:
         amount = Decimal(amount)
-    except:
-        raise TransactionsBuildFailed(extra=dict(amount=amount))
+    except Exception as e:
+        raise TransactionsBuildFailed(extra=dict(amount=amount, e=e))
 
     txn_hash, txn_raw = AMSCore.build_txn(asset, from_addr, to_addr, amount, from_sequence)
 
@@ -82,18 +84,23 @@ async def create_transaction_hash(request: Request):
     async with AMSCore.conn() as conn:
         query_asset = f"SELECT JSON_SEARCH(balances, 'one', :asset) as asset FROM Account where `address`=:addr;"
         asset_row: Optional[Row] = await conn.fetch_one(query_asset, values={"asset": asset, "addr": from_addr})
+        if not asset_row:
+            raise AddressNotFound(extra=dict(address=from_addr))
         if not asset_row.asset:
             raise AssetNotTrusted(extra=dict(asset=asset, addr=from_addr))
 
         from_asset_pos = asset_row.asset.strip('"').rsplit('.asset')[0]
 
         from_asset_balance_query = f"""SELECT * FROM Account 
-    WHERE address='{from_addr}' AND balances->>"{from_asset_pos}.balance" - {amount} >= 0;"""
+WHERE address='{from_addr}' 
+AND cast(balances->>"{from_asset_pos}.balance" AS {DEM}) - CAST('{amount}' AS {DEM} ) >= 0;"""
         from_asset_balance_row: Optional[Row] = await conn.fetch_one(from_asset_balance_query)
         if not from_asset_balance_row:
             raise InsufficientFunds(extra=dict(amount=amount, addr=from_addr))
 
         to_asset_row: Optional[Row] = await conn.fetch_one(query_asset, values={"asset": asset, "addr": to_addr})
+        if not to_asset_row:
+            raise AddressNotFound(extra=dict(address=to_addr))
         if not to_asset_row.asset:
             raise AssetNotTrusted(extra=dict(asset=asset, addr=to_addr))
 
@@ -102,13 +109,20 @@ async def create_transaction_hash(request: Request):
         async with conn.transaction():
             cost_query = f"""UPDATE Account
 SET
-    balances=JSON_REPLACE(balances, '{from_asset_pos}.balance', balances->>"{from_asset_pos}.balance" - {amount}),
+    balances=JSON_REPLACE(balances, 
+    '{from_asset_pos}.balance', 
+    CAST(CAST(balances->>"{from_asset_pos}.balance" AS {DEM}) - CAST('{amount}' AS {DEM}) AS CHAR )),
     `sequence`=`sequence`+1
-WHERE address='{from_addr}' AND balances->>"{from_asset_pos}.balance" - {amount} >= 0 AND `sequence`={from_sequence};"""
+WHERE address='{from_addr}' 
+AND CAST(balances->>"{from_asset_pos}.balance" AS {DEM}) - CAST('{amount}' AS {DEM}) >= 0 
+AND `sequence`={from_sequence};"""
 
             add_query = f"""UPDATE Account
 SET
-    balances=JSON_REPLACE(balances, '{to_asset_pos}.balance', balances->>"{to_asset_pos}.balance" + {amount})
+    balances=JSON_REPLACE(
+        balances, 
+        '{to_asset_pos}.balance', 
+        CAST(CAST(balances->>"{to_asset_pos}.balance" AS {DEM}) + CAST('{amount}' AS {DEM}) AS CHAR ))
 WHERE address='{to_addr}'"""
 
             txn_insert_query = Transaction.insert()

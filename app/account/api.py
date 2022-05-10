@@ -52,7 +52,7 @@ async def create_account_asset(request: Request, account_address: str):
         async with conn.transaction():
             query = """UPDATE Account
 SET
-    balances=JSON_ARRAY_APPEND(balances, '$', CAST('{"asset": ":asset", "balance": 0}' AS JSON)),
+    balances=JSON_ARRAY_APPEND(balances, '$', CAST('{"asset": ":asset", "balance": "0.0000000"}' AS JSON)),
     sequence=sequence+1
 WHERE address=':account_address' AND sequence=:sequence AND JSON_SEARCH(balances, 'all', ':asset') IS NULL"""
             await conn.execute(AMSCore.format_query(query, values={
