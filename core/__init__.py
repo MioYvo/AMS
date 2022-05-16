@@ -30,18 +30,20 @@ class AMSCore:
         return query
 
     @classmethod
-    def build_txn_hash(cls, asset, from_addr, to_addr, amount, from_sequence, create_at):
+    def build_txn_hash(cls, asset, from_addr, to_addr, amount, from_sequence, create_at, op=None):
         txn_raw = {
             "asset": asset, "from": from_addr, "to": to_addr,
             "amount": str(amount), "from_sequence": from_sequence,
             "create_at": create_at
         }
+        if op:
+            txn_raw['op'] = op
         return txn_raw, hashlib.sha256(json.dumps(txn_raw, separators=(',', ':')).encode()).hexdigest()
 
     @classmethod
-    def build_txn(cls, asset, from_addr, to_addr, amount, from_sequence):
+    def build_txn(cls, asset, from_addr, to_addr, amount, from_sequence, op=None):
         create_at = int(Arrow.now().timestamp())
-        txn_raw, txn_hash = cls.build_txn_hash(asset, from_addr, to_addr, amount, from_sequence, create_at)
+        txn_raw, txn_hash = cls.build_txn_hash(asset, from_addr, to_addr, amount, from_sequence, create_at, op=op)
         txn_ts_hash = cls.build_ts_hash(ts=create_at, txn_hash=txn_hash)
         return txn_ts_hash, txn_raw
 

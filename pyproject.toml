@@ -17,6 +17,8 @@ ecdsa = "^0.17.0"
 pycryptodome = "^3.14.1"
 base58 = "^2.1.1"
 stellar-sdk = "^7.0.3"
+schema = "^0.7.5"
+loguru = "^0.6.0"
 
 [tool.poetry.dev-dependencies]
 #locust = "^2.8.6"

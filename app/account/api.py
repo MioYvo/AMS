@@ -103,17 +103,26 @@ class Order(str, Enum):
 
 @accounts_v1_bp.get('/<account_address:str>/transactions')
 async def account_address_transactions(request: Request, account_address: str):
-    desc_query = 'SELECT * FROM Transaction WHERE ' \
-                 '(`from`=:account_address OR `to`=:account_address) ' \
-                 'AND `id`<:cursor ' \
-                 'ORDER BY `id` DESC ' \
-                 'LIMIT :limit'
-
-    asc_query = 'SELECT * FROM Transaction WHERE ' \
-                '(`from`=:account_address OR `to`=:account_address) ' \
-                'AND `id`>:cursor ' \
-                'ORDER BY `id` ASC ' \
-                'LIMIT :limit'
+    desc_query = """SELECT * FROM Transaction WHERE
+(
+    `from`=:account_address
+    OR `to`=:account_address
+    OR (`op` is not null AND JSON_SEARCH(`op`, 'one', :account_address) is not null)
+)
+AND `id`<:cursor
+ORDER BY `id` DESC
+LIMIT :limit
+    """
+    asc_query = """SELECT * FROM Transaction WHERE
+    (
+        `from`=:account_address
+        OR `to`=:account_address
+        OR (`op` is not null AND JSON_SEARCH(`op`, 'one', :account_address) is not null)
+    )
+    AND `id`>:cursor
+    ORDER BY `id` ASC
+    LIMIT :limit
+        """
 
     limit = int(request.args.get('limit', 30))
     cursor = int(request.args.get('cursor', 0))

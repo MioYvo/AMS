@@ -55,6 +55,8 @@ Transaction = sqlalchemy.Table(
     sqlalchemy.Column("asset", sqlalchemy.String(length=20), nullable=False),
     sqlalchemy.Column("from", ForeignKey("Account.address"), nullable=False),
     sqlalchemy.Column("to", ForeignKey("Account.address"), nullable=False),
+    sqlalchemy.Column("is_bulk", sqlalchemy.Boolean, default=False, nullable=False),
+    sqlalchemy.Column("op", sqlalchemy.JSON(), default=None, nullable=True),
     sqlalchemy.Column("amount", sqlalchemy.Numeric(precision=23, scale=7), nullable=False),
     sqlalchemy.Column("from_sequence", sqlalchemy.BigInteger, nullable=False),
     sqlalchemy.Column("is_success", sqlalchemy.Boolean, nullable=False),
@@ -105,6 +107,8 @@ class TransactionRow:
     @classmethod
     def to_json(cls, row: Row):
         d_row = dict(row)
+        d_row['op'] = json.loads(d_row['op']) if isinstance(d_row['op'], str) else d_row['op']
+        d_row['is_bulk'] = bool(d_row['is_bulk'])
         d_row['created_at_dt'] = Arrow.fromdatetime(d_row['created_at'], tzinfo=tz.tzutc()).to(tz.gettz())
         d_row['created_at'] = int(d_row['created_at_dt'].timestamp())
         d_row['updated_at_dt'] = Arrow.fromdatetime(d_row['updated_at'], tzinfo=tz.tzutc()).to(tz.gettz())

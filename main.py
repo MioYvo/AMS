@@ -1,18 +1,30 @@
+import sys
+from pathlib import Path
+
 from sanic import Sanic, Blueprint
 from databases import Database
 from sanic.handlers import ErrorHandler
-from sanic.log import logger
 from sqlalchemy.sql.ddl import DropTable, CreateTable
+from loguru import logger
 
 from app.account.api import accounts_v1_bp
 from app.transaction.api import transactions_v1_bp
 from app.model import Transaction, Account
 
 from config import settings
+from core.log import LOGGING_CONFIG, fmt
 
-app = Sanic(settings.APP_NAME)
+logger.remove(0)    # remove default stderr sink
+logger.add(sys.stderr, level='INFO', format=fmt, diagnose=False, backtrace=False)
+
+logger.add(
+    Path(".").absolute()/"log"/"ams.log", rotation="50 MB", encoding='utf-8', colorize=False, level='INFO',
+    format=fmt, diagnose=False, backtrace=False
+)
+
+
+app = Sanic(settings.APP_NAME, log_config=LOGGING_CONFIG)
 app.config.FALLBACK_ERROR_FORMAT = "json"
-# app.config.DEBUG = True
 
 bp = Blueprint.group(accounts_v1_bp, transactions_v1_bp, url_prefix='/ams')
 app.blueprint(bp)
@@ -78,4 +90,4 @@ app.error_handler = AMSErrorHandler()
 
 if __name__ == "__main__":
     logger.info(db_url)
-    app.run(host="0.0.0.0", port=8000)
+    app.run(host="0.0.0.0", port=8000, debug=False, access_log=False)

@@ -14,7 +14,7 @@ class AssetNotTrusted(SanicException):
 
     @property
     def message(self):
-        return f"Account {self.extra['addr']}'s Asset {self.extra['asset']} not trusted"
+        return f"Account {self.extra.pop('addr', '')}'s Asset {self.extra.pop('asset', '')} not trusted, {self.extra}"
 
 
 class TransactionNotFound(SanicException):
