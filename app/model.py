@@ -10,6 +10,8 @@ from dateutil import tz
 from sqlalchemy import text, ForeignKey, UniqueConstraint
 from sqlalchemy.engine import Row
 
+from core.ams_crypt import AMSCrypt, aes_decrypt
+
 metadata = sqlalchemy.MetaData()
 
 
@@ -31,6 +33,7 @@ Account = sqlalchemy.Table(
     sqlalchemy.Column("address", sqlalchemy.String(length=56), nullable=False),
     sqlalchemy.Column("secret", sqlalchemy.String(length=100), nullable=False),
     sqlalchemy.Column("balances", sqlalchemy.JSON(), default=[]),
+    sqlalchemy.Column('mnemonic', sqlalchemy.String(length=128), nullable=False),
     sqlalchemy.Column(
         'created_at', sqlalchemy.TIMESTAMP(),
         server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"),
@@ -52,12 +55,12 @@ Transaction = sqlalchemy.Table(
     metadata,
     sqlalchemy.Column("id", sqlalchemy.BigInteger, primary_key=True),
     sqlalchemy.Column("hash", sqlalchemy.String(length=74), nullable=False),
-    sqlalchemy.Column("asset", sqlalchemy.String(length=20), nullable=False),
+    sqlalchemy.Column("asset", sqlalchemy.String(length=20), nullable=True),
     sqlalchemy.Column("from", ForeignKey("Account.address"), nullable=False),
-    sqlalchemy.Column("to", ForeignKey("Account.address"), nullable=False),
+    sqlalchemy.Column("to", ForeignKey("Account.address"), nullable=True),
     sqlalchemy.Column("is_bulk", sqlalchemy.Boolean, default=False, nullable=False),
     sqlalchemy.Column("op", sqlalchemy.JSON(), default=None, nullable=True),
-    sqlalchemy.Column("amount", sqlalchemy.Numeric(precision=23, scale=7), nullable=False),
+    sqlalchemy.Column("amount", sqlalchemy.Numeric(precision=23, scale=7), nullable=True),
     sqlalchemy.Column("from_sequence", sqlalchemy.BigInteger, nullable=False),
     sqlalchemy.Column("is_success", sqlalchemy.Boolean, nullable=False),
     sqlalchemy.Column("memo", sqlalchemy.String(length=64), nullable=True),
@@ -91,15 +94,24 @@ def dict_row(row: Row) -> dict:
 
 class AccountRow:
     @classmethod
-    def to_json(cls, row: Row):
-        d_row: Dict[str, Union[datetime, str]] = dict(row)
+    def to_json(cls, row: Row, secret=False, decrypt_secret=False):
+        d_row: Dict[str, Union[datetime, str, None]] = dict(row)
         d_row['created_at_dt'] = Arrow.fromdatetime(d_row['created_at'], tzinfo=tz.tzutc()).to(tz.gettz())
         d_row['created_at'] = int(d_row['created_at_dt'].timestamp())
         d_row['updated_at_dt'] = Arrow.fromdatetime(d_row['updated_at'], tzinfo=tz.tzutc()).to(tz.gettz())
         d_row['updated_at'] = int(d_row['updated_at_dt'].timestamp())
         if isinstance(d_row['balances'], str):
             d_row['balances'] = json.loads(d_row['balances'])
-        d_row.pop('secret', None)
+        if not secret:
+            d_row['secret'] = None
+        else:
+            if decrypt_secret:
+                d_row['secret'] = aes_decrypt(
+                    d_row['secret'],
+                    AMSCrypt.account_secret_aes_key(),
+                    AMSCrypt.account_secret_aes_iv()
+                ).decode()
+            # d_row.pop('secret', None)
         return d_row
 
 

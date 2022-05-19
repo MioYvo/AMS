@@ -39,27 +39,34 @@ async def get_account_by_address(request: Request, account_address: str):
 @accounts_v1_bp.post('/<account_address:str>/asset')
 async def create_account_asset(request: Request, account_address: str):
     """
-
+    信任资产
     """
-    asset = request.form.get('asset')   # TODO valid asset from request form params
+    asset_str: str = request.form.get('asset')   # TODO valid asset from request form params
+    asset_list: List[str] = [a.strip() for a in asset_str.split(',')]
     search_query = "SELECT * FROM Account WHERE address = :address"
     async with AMSCore.conn() as conn:
         row: Optional[Row] = await conn.fetch_one(query=search_query, values={"address": account_address})
     if not row:
         raise AddressNotFound(extra=dict(address=account_address))
 
+    sequence: int = row.sequence
+
     async with AMSCore.conn() as conn:
         async with conn.transaction():
-            query = """UPDATE Account
-SET
-    balances=JSON_ARRAY_APPEND(balances, '$', CAST('{"asset": ":asset", "balance": "0.0000000"}' AS JSON)),
-    sequence=sequence+1
-WHERE address=':account_address' AND sequence=:sequence AND JSON_SEARCH(balances, 'all', ':asset') IS NULL"""
-            await conn.execute(AMSCore.format_query(query, values={
-                'asset': asset, 'account_address': account_address, "sequence": row.sequence
-            }))
+            for asset in asset_list:
 
-            row: Optional[Row] = await conn.fetch_one(query=search_query, values={"address": account_address})
+                query = """UPDATE Account
+    SET
+        balances=JSON_ARRAY_APPEND(balances, '$', CAST('{"asset": ":asset", "balance": "0.0000000"}' AS JSON)),
+        sequence=sequence+1
+    WHERE address=':account_address' AND sequence=:sequence AND JSON_SEARCH(balances, 'all', ':asset') IS NULL"""
+                rst = await conn.execute(AMSCore.format_query(query, values={
+                    'asset': asset, 'account_address': account_address, "sequence": sequence
+                }))
+                if rst:
+                    sequence += 1
+
+        row: Optional[Row] = await conn.fetch_one(query=search_query, values={"address": account_address})
 
     return json(AccountRow.to_json(row), dumps=json_dumps, cls=MyEncoder)
 
@@ -166,7 +173,8 @@ async def create_account(request: Request):
             s_address.secret,
             AMSCrypt.account_secret_aes_key(),
             AMSCrypt.account_secret_aes_iv()).decode(),
-        "balances": []
+        "balances": [],
+        "mnemonic": s_address.generate_mnemonic_phrase()
     }
     async with AMSCore.conn() as conn:
         await conn.execute(query=query, values=values)
@@ -174,4 +182,4 @@ async def create_account(request: Request):
         row: Optional[Row] = await conn.fetch_one(query=query)
     if not row:
         raise AddressNotFound(extra=dict(address=values['address']))
-    return json(AccountRow.to_json(row), dumps=json_dumps, status=201, cls=MyEncoder)
+    return json(AccountRow.to_json(row, secret=True, decrypt_secret=True), dumps=json_dumps, status=201, cls=MyEncoder)

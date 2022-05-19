@@ -1,5 +1,6 @@
 import hashlib
 import json
+from decimal import Decimal
 
 from arrow import Arrow
 from databases import Database
@@ -33,7 +34,7 @@ class AMSCore:
     def build_txn_hash(cls, asset, from_addr, to_addr, amount, from_sequence, create_at, op=None):
         txn_raw = {
             "asset": asset, "from": from_addr, "to": to_addr,
-            "amount": str(amount), "from_sequence": from_sequence,
+            "amount": str(amount) if isinstance(amount, Decimal) else amount, "from_sequence": from_sequence,
             "create_at": create_at
         }
         if op:

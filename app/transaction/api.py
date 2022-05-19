@@ -190,7 +190,7 @@ async def bulk_create_transaction_hash(request: Request):
         memo = d['memo']
 
     txn_hash, txn_raw = AMSCore.build_txn(
-        asset='', from_addr=from_addr, to_addr=settings.AMS_BULK_FAKE_TO_ADDR, amount=Decimal('0'),
+        asset=None, from_addr=from_addr, to_addr=None, amount=None,
         from_sequence=from_sequence, op=op
     )
     return json(dict(hash=txn_hash, txn_raw=txn_raw, memo=memo))
@@ -208,7 +208,7 @@ async def bulk_create_transaction(request: Request):
         from_sequence = d['from_sequence']
         memo = d['memo']
         txn_hash, create_at = validate_hash(
-            txn_hash=d['hash'], asset='', from_addr=from_addr, to_addr=None, amount=Decimal('0'),
+            txn_hash=d['hash'], asset=None, from_addr=from_addr, to_addr=None, amount=None,
             from_sequence=from_sequence, op=op
         )
 
@@ -229,6 +229,11 @@ async def bulk_create_transaction(request: Request):
                 for _op in op:
                     if _op['from'] == _op['to']:
                         raise TransactionsSelfTransfer()
+
+                    owner_seq_query = f"""SELECT `id` 
+                    FROM Account WHERE `address`='{from_addr}' and `sequence`={from_sequence}"""
+                    if not await conn.fetch_one(query=owner_seq_query):
+                        raise TransactionsSendFailed(extra=dict(sequence=from_sequence, from_addr=from_addr))
 
                     cost_query = f"""UPDATE Account
     SET
@@ -288,10 +293,10 @@ WHERE address='{_op["to"]}'"""
                 try:
                     insert_row = await conn.execute(txn_insert_query, values={
                         "hash": txn_hash,
-                        "asset": '',
+                        "asset": None,
                         "from": from_addr,
                         "to": None,
-                        "amount": Decimal('0'),
+                        "amount": None,
                         "from_sequence": from_sequence,
                         "is_success": True,
                         "is_bulk": True,
