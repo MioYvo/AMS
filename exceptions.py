@@ -70,4 +70,12 @@ class TransactionsSelfTransfer(SanicException):
 
     @property
     def message(self):
-        return "Cannot transfer to self"
+        return f"Cannot transfer to self {self.extra.get('addr')}"
+
+
+class BulkTransactionsFromAddress(SanicException):
+    status_code = 40009
+
+    @property
+    def message(self):
+        return f"Op must contains from address. {self.extra.get('from_addr')}"

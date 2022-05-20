@@ -34,6 +34,7 @@ Account = sqlalchemy.Table(
     sqlalchemy.Column("secret", sqlalchemy.String(length=100), nullable=False),
     sqlalchemy.Column("balances", sqlalchemy.JSON(), default=[]),
     sqlalchemy.Column('mnemonic', sqlalchemy.String(length=128), nullable=False),
+    sqlalchemy.Column('transactions', sqlalchemy.JSON()),
     sqlalchemy.Column(
         'created_at', sqlalchemy.TIMESTAMP(),
         server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"),

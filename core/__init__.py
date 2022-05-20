@@ -1,18 +1,31 @@
 import hashlib
 import json
+from copy import deepcopy
 from decimal import Decimal
+from typing import Optional
 
 from arrow import Arrow
 from databases import Database
+from databases.core import Connection
 from sanic import Sanic
+from sanic.log import logger
+from sqlalchemy import Table
+from sqlalchemy.engine import Row
+from sqlalchemy.sql.ddl import CreateTable
 
+from app.model import Transaction
 from config import settings
 
 
-class AMSCore:
+class AMSCoreClass:
     index = [5, 0, 1, 8, 4, 6, 2, 3, 9, 7]
     hash_index = [7, 12, 13, 16, 21, 26, 28, 34, 61, 63]
     new_hash_index = [7, 13, 15, 19, 25, 31, 34, 41, 69, 72]
+    TABLE_SPLIT_FMT = '%Y_%m'
+
+    def __init__(self):
+        self.TABLE_SPLIT_FMT = '%Y_%m'
+        self.model_mapping = {}
 
     @classmethod
     def db(cls) -> Database:
@@ -71,3 +84,49 @@ class AMSCore:
 
         origin_ts = int(''.join([list_ts[cls.index.index(i)] for i in range(10)]))
         return origin_hash, origin_ts
+
+    def get_model(self, table_name):
+        return self.model_mapping.get(table_name)
+
+    async def get_txn_model(self, txn_hash: str, conn: Connection) -> Table:
+        table_name = await self._txn_table_name(txn_hash, conn)
+        return self.model_mapping.get(table_name, Transaction)
+
+    async def check_tables(self, table_name: str, conn: Connection, model: Table):
+        row: Optional[Row] = await conn.fetch_one(f"SHOW tables like '{table_name}';")
+        if not row:
+            new_model = deepcopy(model)
+            new_model.name = table_name
+            self.model_mapping[table_name] = new_model
+
+            logger.info(f"Create Table {table_name}")
+            await conn.execute(CreateTable(self.model_mapping[table_name], if_not_exists=True))
+        else:
+            if not self.model_mapping.get(table_name):
+                new_model = deepcopy(model)
+                new_model.name = table_name
+                self.model_mapping[table_name] = new_model
+
+    @classmethod
+    def origin_table_name(cls, model):
+        return model.name.split('__')[0]
+
+    def __txn_table_name(self, txn_hash: str, model: Table = Transaction):
+        assert len(txn_hash) == 74
+        _, origin_ts = self.parse_hash(txn_hash)
+        local_dt = Arrow.fromtimestamp(origin_ts)
+        local_dt_str = local_dt.strftime(self.TABLE_SPLIT_FMT)
+        return f"{self.origin_table_name(model)}__{local_dt_str}", local_dt
+
+    async def _txn_table_name(self, txn_hash: str, conn: Connection) -> str:
+        table_name, local_dt = self.__txn_table_name(txn_hash=txn_hash)
+
+        model = self.model_mapping.get(table_name)
+        if model is None:
+            await self.check_tables(table_name=table_name, conn=conn, model=Transaction)
+            return table_name
+        else:
+            return table_name
+
+
+AMSCore = AMSCoreClass()

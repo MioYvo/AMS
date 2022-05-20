@@ -6,16 +6,17 @@ from json import dumps as json_dumps
 from arrow import Arrow
 from pymysql import IntegrityError, OperationalError
 from sanic import Blueprint, Request, json
+from sqlalchemy import select
 from sqlalchemy.engine import Row
 from schema import Schema, SchemaError, Use, And, Optional as OptionalSchema
 from stellar_sdk import Keypair
 
-from app.model import Transaction, TransactionRow
+from app.model import TransactionRow, Account
 from config import settings
 from core import AMSCore
 from core.encoder import MyEncoder
 from exceptions import TransactionNotFound, TransactionsBuildFailed, TransactionsExpired, AssetNotTrusted, \
-    InsufficientFunds, TransactionsSendFailed, TransactionsSelfTransfer, AddressNotFound
+    InsufficientFunds, TransactionsSendFailed, TransactionsSelfTransfer, AddressNotFound, BulkTransactionsFromAddress
 
 DEM = settings.AMS_DECIMAL
 
@@ -24,13 +25,14 @@ transactions_v1_bp = Blueprint("transactions", version=1, url_prefix='transactio
 
 @transactions_v1_bp.get('/<tx_hash:str>')
 async def get_transaction_by_hash(request: Request, tx_hash: str):
-    query = 'SELECT * FROM Transaction WHERE `hash`=:tx_hash'
     async with AMSCore.conn() as conn:
-        row: Optional[Row] = await conn.fetch_one(query=query, values=dict(tx_hash=tx_hash))
-    if not row:
+        transaction_model = await AMSCore.get_txn_model(txn_hash=tx_hash, conn=conn)
+        select_txn = transaction_model.select().where(transaction_model.c.hash == tx_hash)
+        txn_row = await conn.fetch_one(select_txn)
+    if not txn_row:
         raise TransactionNotFound(extra=dict(tx_hash=tx_hash))
 
-    return json(TransactionRow.to_json(row), dumps=json_dumps, cls=MyEncoder)
+    return json(TransactionRow.to_json(txn_row), dumps=json_dumps, cls=MyEncoder)
 
 
 @transactions_v1_bp.post('/hash')
@@ -133,7 +135,8 @@ SET
         CAST(CAST(balances->>"{to_asset_pos}.balance" AS {DEM}) + CAST('{amount}' AS {DEM}) AS CHAR ))
 WHERE address='{to_addr}'"""
 
-            txn_insert_query = Transaction.insert()
+            transaction_model = await AMSCore.get_txn_model(txn_hash=txn_hash, conn=conn)
+            txn_insert_query = transaction_model.insert()
             cost_row = await conn.execute(cost_query)
             if not cost_row:
                 raise TransactionsSendFailed(extra=dict(sequence=from_sequence))
@@ -150,6 +153,7 @@ WHERE address='{to_addr}'"""
                     "from_sequence": from_sequence,
                     "is_success": True,
                     "memo": memo,
+                    "is_bulk": False,
                     "created_at": Arrow.fromtimestamp(create_at).to('utc').datetime
                 })
             except IntegrityError as e:
@@ -158,7 +162,7 @@ WHERE address='{to_addr}'"""
             if not insert_row:
                 raise TransactionsSendFailed(extra=dict(txn=txn_hash))
             # assert cost_row and add_row and insert_row
-        select_txn = Transaction.select().where(Transaction.c.hash == txn_hash)
+        select_txn = transaction_model.select().where(transaction_model.c.hash == txn_hash)
         txn_row = await conn.fetch_one(select_txn)
         return json(TransactionRow.to_json(txn_row), dumps=json_dumps, cls=MyEncoder)
 
@@ -212,6 +216,15 @@ async def bulk_create_transaction(request: Request):
             from_sequence=from_sequence, op=op
         )
 
+        from_to_set = set()
+        for i in op:
+            if i['from'] == i['to']:
+                raise TransactionsSelfTransfer(extra=dict(addr=i['from']))
+            from_to_set.add(i['from'])
+            from_to_set.add(i['to'])
+        if from_addr not in from_to_set:
+            raise BulkTransactionsFromAddress(extra=dict(from_addr=from_addr))
+
         # validate all from address
         # op: [{"from": "ABC", "to": "CBA", "asset": "USDT", "amount": "1.23"}, ...]
 
@@ -225,16 +238,14 @@ async def bulk_create_transaction(request: Request):
         # validate trusted asset
 
         async with AMSCore.conn() as conn:
+            transaction_model = await AMSCore.get_txn_model(txn_hash=txn_hash, conn=conn)
+            select_txn = select(Account.c.id).where(Account.c.address == from_addr, Account.c.sequence == from_sequence)
+            owner_seq_query_row = await conn.fetch_one(select_txn)
+            if not owner_seq_query_row:
+                raise TransactionsSendFailed(extra=dict(sequence=from_sequence, from_addr=from_addr))
+
             async with conn.transaction():
                 for _op in op:
-                    if _op['from'] == _op['to']:
-                        raise TransactionsSelfTransfer()
-
-                    owner_seq_query = f"""SELECT `id` 
-                    FROM Account WHERE `address`='{from_addr}' and `sequence`={from_sequence}"""
-                    if not await conn.fetch_one(query=owner_seq_query):
-                        raise TransactionsSendFailed(extra=dict(sequence=from_sequence, from_addr=from_addr))
-
                     cost_query = f"""UPDATE Account
     SET
         balances=JSON_REPLACE(
@@ -289,7 +300,7 @@ WHERE address='{_op["to"]}'"""
                             raise AssetNotTrusted(extra=dict(op=_op, addr='', asset=_op['asset']))
                         raise TransactionsSendFailed(extra=dict(e=e))
 
-                txn_insert_query = Transaction.insert()
+                txn_insert_query = transaction_model.insert()
                 try:
                     insert_row = await conn.execute(txn_insert_query, values={
                         "hash": txn_hash,
@@ -314,7 +325,7 @@ WHERE address='{_op["to"]}'"""
                 # End db transaction
 
             # after db transaction
-            select_txn = Transaction.select().where(Transaction.c.hash == txn_hash)
+            select_txn = transaction_model.select().where(transaction_model.c.hash == txn_hash)
             txn_row = await conn.fetch_one(select_txn)
         return json(TransactionRow.to_json(txn_row), dumps=json_dumps, cls=MyEncoder)
 
