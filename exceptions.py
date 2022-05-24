@@ -6,7 +6,7 @@ class AddressNotFound(SanicException):
 
     @property
     def message(self):
-        return f"Address {self.extra['address']} not found"
+        return f"Address {self.extra.get('address', '')} not found"
 
 
 class AssetNotTrusted(SanicException):

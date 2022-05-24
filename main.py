@@ -35,6 +35,7 @@ db_url = f'mysql+aiomysql://{settings.DB_USER}:{settings.DB_PASSWD}@' \
 database = Database(
     db_url,
     ssl=False,
+    echo='error',
     min_size=settings.DB_MIN_CONN,
     max_size=settings.DB_MAX_CONN,
     pool_recycle=settings.DB_RECYCLE_SECONDS

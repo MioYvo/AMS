@@ -11,7 +11,7 @@ from sqlalchemy.engine import Row
 from schema import Schema, SchemaError, Use, And, Optional as OptionalSchema
 from stellar_sdk import Keypair
 
-from app.model import TransactionRow, Account
+from app.model import TransactionRow
 from config import settings
 from core import AMSCore
 from core.encoder import MyEncoder
@@ -24,9 +24,9 @@ transactions_v1_bp = Blueprint("transactions", version=1, url_prefix='transactio
 
 
 @transactions_v1_bp.get('/<tx_hash:str>')
-async def get_transaction_by_hash(request: Request, tx_hash: str):
+async def get_transaction_by_hash(_: Request, tx_hash: str):
     async with AMSCore.conn() as conn:
-        transaction_model = await AMSCore.get_txn_model(txn_hash=tx_hash, conn=conn)
+        transaction_model = await AMSCore.txn_model(txn_hash=tx_hash, conn=conn)
         select_txn = transaction_model.select().where(transaction_model.c.hash == tx_hash)
         txn_row = await conn.fetch_one(select_txn)
     if not txn_row:
@@ -92,8 +92,11 @@ async def create_transaction(request: Request):
     txn_hash, create_at = validate_hash(txn_hash, asset, from_addr, to_addr, amount, from_sequence)
 
     async with AMSCore.conn() as conn:
-        query_asset = f"SELECT JSON_SEARCH(balances, 'one', :asset) as asset FROM Account where `address`=:addr;"
-        asset_row: Optional[Row] = await conn.fetch_one(query_asset, values={"asset": asset, "addr": from_addr})
+        from_acc_model = await AMSCore.acc_model(from_addr, conn=conn)
+        to_acc_model = await AMSCore.acc_model(to_addr, conn=conn)
+        query_asset = f"SELECT JSON_SEARCH(balances, 'one', ':asset') as asset " \
+                      f"FROM :table where `address`=':addr';"
+        asset_row: Optional[Row] = await conn.fetch_one(AMSCore.format_query(query_asset, values={"table": from_acc_model.name, "asset": asset, "addr": from_addr}))
         if not asset_row:
             raise AddressNotFound(extra=dict(address=from_addr))
         if not asset_row.asset:
@@ -101,14 +104,14 @@ async def create_transaction(request: Request):
 
         from_asset_pos = asset_row.asset.strip('"').rsplit('.asset')[0]
 
-        from_asset_balance_query = f"""SELECT * FROM Account 
+        from_asset_balance_query = f"""SELECT * FROM {from_acc_model.name} 
 WHERE address='{from_addr}' 
 AND cast(balances->>"{from_asset_pos}.balance" AS {DEM}) - CAST('{amount}' AS {DEM} ) >= 0;"""
         from_asset_balance_row: Optional[Row] = await conn.fetch_one(from_asset_balance_query)
         if not from_asset_balance_row:
             raise InsufficientFunds(extra=dict(amount=amount, addr=from_addr))
 
-        to_asset_row: Optional[Row] = await conn.fetch_one(query_asset, values={"asset": asset, "addr": to_addr})
+        to_asset_row: Optional[Row] = await conn.fetch_one(AMSCore.format_query(query_asset, values={"table": to_acc_model.name, "asset": asset, "addr": to_addr}))
         if not to_asset_row:
             raise AddressNotFound(extra=dict(address=to_addr))
         if not to_asset_row.asset:
@@ -116,26 +119,45 @@ AND cast(balances->>"{from_asset_pos}.balance" AS {DEM}) - CAST('{amount}' AS {D
 
         to_asset_pos = to_asset_row.asset.strip('"').rsplit('.asset')[0]
 
+        from_acc_model = await AMSCore.acc_model(address=from_addr, conn=conn)
+        to_acc_model = await AMSCore.acc_model(address=to_addr, conn=conn)
+
         async with conn.transaction():
-            cost_query = f"""UPDATE Account
+            cost_query = f"""UPDATE {from_acc_model.name}
 SET
     balances=JSON_REPLACE(balances, 
     '{from_asset_pos}.balance', 
     CAST(CAST(balances->>"{from_asset_pos}.balance" AS {DEM}) - CAST('{amount}' AS {DEM}) AS CHAR )),
-    `sequence`=`sequence`+1
+    `sequence`=`sequence`+1,
+    `transactions`=IF(
+        JSON_CONTAINS(`transactions`, CAST('"{txn_hash}"' AS JSON), '$') = 1, 
+        `transactions`, 
+        IFNULL(
+            json_array_append(transactions, '$', CAST('"{txn_hash}"' AS JSON)), 
+            CAST('["{txn_hash}"]' AS JSON)
+        )
+    )
 WHERE address='{from_addr}' 
 AND CAST(balances->>"{from_asset_pos}.balance" AS {DEM}) - CAST('{amount}' AS {DEM}) >= 0 
 AND `sequence`={from_sequence};"""
 
-            add_query = f"""UPDATE Account
+            add_query = f"""UPDATE {to_acc_model.name}
 SET
     balances=JSON_REPLACE(
         balances, 
         '{to_asset_pos}.balance', 
-        CAST(CAST(balances->>"{to_asset_pos}.balance" AS {DEM}) + CAST('{amount}' AS {DEM}) AS CHAR ))
+        CAST(CAST(balances->>"{to_asset_pos}.balance" AS {DEM}) + CAST('{amount}' AS {DEM}) AS CHAR )),
+    `transactions`=IF(
+        JSON_CONTAINS(`transactions`, CAST('"{txn_hash}"' AS JSON), '$') = 1, 
+        `transactions`, 
+        IFNULL(
+            json_array_append(transactions, '$', CAST('"{txn_hash}"' AS JSON)), 
+            CAST('["{txn_hash}"]' AS JSON)
+        )
+    )
 WHERE address='{to_addr}'"""
 
-            transaction_model = await AMSCore.get_txn_model(txn_hash=txn_hash, conn=conn)
+            transaction_model = await AMSCore.txn_model(txn_hash=txn_hash, conn=conn)
             txn_insert_query = transaction_model.insert()
             cost_row = await conn.execute(cost_query)
             if not cost_row:
@@ -225,28 +247,20 @@ async def bulk_create_transaction(request: Request):
         if from_addr not in from_to_set:
             raise BulkTransactionsFromAddress(extra=dict(from_addr=from_addr))
 
-        # validate all from address
-        # op: [{"from": "ABC", "to": "CBA", "asset": "USDT", "amount": "1.23"}, ...]
-
-#         find_asset_pos_sql = """SELECT
-# address,CONCAT_WS('.', SUBSTRING_INDEX(JSON_SEARCH(`balances`, 'one', ':asset'), '.', 1), 'balance'), sequence
-# FROM Account
-# WHERE `address` in (:address)
-#         """
-#         AMSCore.format_query(find_asset_pos_sql, values=dict(address=all_from.keys()))
-#         find_asset_pos_sql.format()
-        # validate trusted asset
-
         async with AMSCore.conn() as conn:
-            transaction_model = await AMSCore.get_txn_model(txn_hash=txn_hash, conn=conn)
-            select_txn = select(Account.c.id).where(Account.c.address == from_addr, Account.c.sequence == from_sequence)
+            transaction_model = await AMSCore.txn_model(txn_hash=txn_hash, conn=conn)
+            acc_model = await AMSCore.acc_model(address=from_addr, conn=conn)
+            select_txn = select(acc_model.c.id).where(
+                acc_model.c.address == from_addr, acc_model.c.sequence == from_sequence)
             owner_seq_query_row = await conn.fetch_one(select_txn)
             if not owner_seq_query_row:
                 raise TransactionsSendFailed(extra=dict(sequence=from_sequence, from_addr=from_addr))
 
             async with conn.transaction():
                 for _op in op:
-                    cost_query = f"""UPDATE Account
+                    op_from_acc_model = await AMSCore.acc_model(address=_op["from"], conn=conn)
+                    op_to_acc_model = await AMSCore.acc_model(address=_op["to"], conn=conn)
+                    cost_query = f"""UPDATE {op_from_acc_model.name}
     SET
         balances=JSON_REPLACE(
             balances,
@@ -260,7 +274,15 @@ async def bulk_create_transaction(request: Request):
                 AS CHAR
             )
         ),
-        `sequence`=`sequence`+1
+        `sequence`=`sequence`+1,
+        `transactions`=IF(
+            JSON_CONTAINS(`transactions`, CAST('"{txn_hash}"' AS JSON), '$') = 1, 
+            `transactions`, 
+            IFNULL(
+                json_array_append(transactions, '$', CAST('"{txn_hash}"' AS JSON)), 
+                CAST('["{txn_hash}"]' AS JSON)
+            )
+        )
     WHERE address='{_op["from"]}'
     AND CAST(
             JSON_UNQUOTE( JSON_EXTRACT(`balances`, CONCAT_WS('.', SUBSTRING_INDEX(JSON_UNQUOTE(JSON_SEARCH(`balances`, 'one', '{_op["asset"]}')), '.', 1), 'balance')))
@@ -269,7 +291,7 @@ async def bulk_create_transaction(request: Request):
         CAST( '{_op["amount"]}' AS {DEM} ) >= 0"""
         #     AND `sequence`=2;"""
 
-                    add_query = f"""UPDATE Account
+                    add_query = f"""UPDATE {op_to_acc_model.name}
 SET
     balances=JSON_REPLACE(
         balances,
@@ -284,6 +306,14 @@ SET
                 AS {DEM}
             )
             AS CHAR
+        )
+    ),
+    `transactions`=IF(
+        JSON_CONTAINS(`transactions`, CAST('"{txn_hash}"' AS JSON), '$') = 1, 
+        `transactions`, 
+        IFNULL(
+            json_array_append(transactions, '$', CAST('"{txn_hash}"' AS JSON)), 
+            CAST('["{txn_hash}"]' AS JSON)
         )
     )
 WHERE address='{_op["to"]}'"""
@@ -328,5 +358,3 @@ WHERE address='{_op["to"]}'"""
             select_txn = transaction_model.select().where(transaction_model.c.hash == txn_hash)
             txn_row = await conn.fetch_one(select_txn)
         return json(TransactionRow.to_json(txn_row), dumps=json_dumps, cls=MyEncoder)
-
-

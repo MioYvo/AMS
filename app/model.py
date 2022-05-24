@@ -7,7 +7,7 @@ from typing import Dict, Union
 import sqlalchemy
 from arrow import Arrow
 from dateutil import tz
-from sqlalchemy import text, ForeignKey, UniqueConstraint
+from sqlalchemy import text, UniqueConstraint
 from sqlalchemy.engine import Row
 
 from core.ams_crypt import AMSCrypt, aes_decrypt
@@ -57,8 +57,8 @@ Transaction = sqlalchemy.Table(
     sqlalchemy.Column("id", sqlalchemy.BigInteger, primary_key=True),
     sqlalchemy.Column("hash", sqlalchemy.String(length=74), nullable=False),
     sqlalchemy.Column("asset", sqlalchemy.String(length=20), nullable=True),
-    sqlalchemy.Column("from", ForeignKey("Account.address"), nullable=False),
-    sqlalchemy.Column("to", ForeignKey("Account.address"), nullable=True),
+    sqlalchemy.Column("from", sqlalchemy.String(length=56), nullable=False),
+    sqlalchemy.Column("to", sqlalchemy.String(length=56), nullable=True, index=True),
     sqlalchemy.Column("is_bulk", sqlalchemy.Boolean, default=False, nullable=False),
     sqlalchemy.Column("op", sqlalchemy.JSON(), default=None, nullable=True),
     sqlalchemy.Column("amount", sqlalchemy.Numeric(precision=23, scale=7), nullable=True),
@@ -74,7 +74,7 @@ Transaction = sqlalchemy.Table(
         server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"),
         server_onupdate=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP")
     ),
-    # Index('Transaction_from_from_sequence_uindex', 'from', 'from_sequence', unique=True),
+    # Constraint('to', name="Transaction_to_index", ),
     UniqueConstraint('hash', name='Transaction_hash_uindex'),
     UniqueConstraint('from', 'from_sequence', name='Transaction_from_from_sequence_uindex'),
 )
@@ -95,7 +95,7 @@ def dict_row(row: Row) -> dict:
 
 class AccountRow:
     @classmethod
-    def to_json(cls, row: Row, secret=False, decrypt_secret=False):
+    def to_json(cls, row: Row, secret=False, decrypt_secret=False, transactions=False):
         d_row: Dict[str, Union[datetime, str, None]] = dict(row)
         d_row['created_at_dt'] = Arrow.fromdatetime(d_row['created_at'], tzinfo=tz.tzutc()).to(tz.gettz())
         d_row['created_at'] = int(d_row['created_at_dt'].timestamp())
@@ -113,12 +113,15 @@ class AccountRow:
                     AMSCrypt.account_secret_aes_iv()
                 ).decode()
             # d_row.pop('secret', None)
+        if not transactions:
+            if 'transactions' in d_row:
+                d_row.pop('transactions', None)
         return d_row
 
 
 class TransactionRow:
     @classmethod
-    def to_json(cls, row: Row):
+    def to_json(cls, row: Row, replace_id_with_hash=False):
         d_row = dict(row)
         d_row['op'] = json.loads(d_row['op']) if isinstance(d_row['op'], str) else d_row['op']
         d_row['is_bulk'] = bool(d_row['is_bulk'])
@@ -127,4 +130,6 @@ class TransactionRow:
         d_row['updated_at_dt'] = Arrow.fromdatetime(d_row['updated_at'], tzinfo=tz.tzutc()).to(tz.gettz())
         d_row['updated_at'] = int(d_row['updated_at_dt'].timestamp())
         d_row['is_success'] = bool(d_row['is_success'])
+        if replace_id_with_hash:
+            d_row['id'] = d_row['hash']
         return d_row

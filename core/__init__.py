@@ -11,9 +11,10 @@ from sanic import Sanic
 from sanic.log import logger
 from sqlalchemy import Table
 from sqlalchemy.engine import Row
-from sqlalchemy.sql.ddl import CreateTable
+from sqlalchemy.sql.ddl import CreateTable, CreateIndex
+from stellar_sdk import Keypair
 
-from app.model import Transaction
+from app.model import Transaction, Account
 from config import settings
 
 
@@ -26,6 +27,7 @@ class AMSCoreClass:
     def __init__(self):
         self.TABLE_SPLIT_FMT = '%Y_%m'
         self.model_mapping = {}
+        self.acc_table_num = 5
 
     @classmethod
     def db(cls) -> Database:
@@ -88,19 +90,21 @@ class AMSCoreClass:
     def get_model(self, table_name):
         return self.model_mapping.get(table_name)
 
-    async def get_txn_model(self, txn_hash: str, conn: Connection) -> Table:
-        table_name = await self._txn_table_name(txn_hash, conn)
-        return self.model_mapping.get(table_name, Transaction)
+    async def get_acc_model(self, address: str, conn: Connection) -> Table:
+        return await self.acc_model(address, conn)
 
     async def check_tables(self, table_name: str, conn: Connection, model: Table):
         row: Optional[Row] = await conn.fetch_one(f"SHOW tables like '{table_name}';")
         if not row:
             new_model = deepcopy(model)
             new_model.name = table_name
+            logger.info(f"Create Table: {CreateTable(new_model, if_not_exists=True)}")
+            await conn.execute(CreateTable(new_model, if_not_exists=True))
+            if new_model.indexes:
+                for index in new_model.indexes:
+                    logger.info(f"Create Index: {CreateIndex(index)}")
+                    await conn.execute(CreateIndex(index))
             self.model_mapping[table_name] = new_model
-
-            logger.info(f"Create Table {table_name}")
-            await conn.execute(CreateTable(self.model_mapping[table_name], if_not_exists=True))
         else:
             if not self.model_mapping.get(table_name):
                 new_model = deepcopy(model)
@@ -118,15 +122,19 @@ class AMSCoreClass:
         local_dt_str = local_dt.strftime(self.TABLE_SPLIT_FMT)
         return f"{self.origin_table_name(model)}__{local_dt_str}", local_dt
 
-    async def _txn_table_name(self, txn_hash: str, conn: Connection) -> str:
+    async def txn_model(self, txn_hash: str, conn: Connection) -> Table:
         table_name, local_dt = self.__txn_table_name(txn_hash=txn_hash)
-
-        model = self.model_mapping.get(table_name)
-        if model is None:
+        if self.model_mapping.get(table_name) is None:
             await self.check_tables(table_name=table_name, conn=conn, model=Transaction)
-            return table_name
-        else:
-            return table_name
+        return self.model_mapping.get(table_name)
+
+    async def acc_model(self, address: str, conn: Connection) -> Table:
+        assert Keypair.from_public_key(address)
+        table_no = int(hashlib.blake2s(address.encode()).hexdigest(), 16) % self.acc_table_num + 1  # starts from 1
+        table_name = f"{self.origin_table_name(Account)}__{table_no}"
+        if self.model_mapping.get(table_name) is None:
+            await self.check_tables(table_name=table_name, conn=conn, model=Account)
+        return self.model_mapping.get(table_name)
 
 
 AMSCore = AMSCoreClass()

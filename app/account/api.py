@@ -6,6 +6,9 @@ from enum import Enum, unique
 import ujson
 from sanic import Blueprint, Request, json
 from sanic.exceptions import InvalidUsage
+from sanic.log import logger
+from schema import Schema, And, SchemaError
+from sqlalchemy import select
 from sqlalchemy.engine import Row
 from stellar_sdk import Keypair
 
@@ -13,13 +16,13 @@ from core import ams_crypt, AMSCore
 from core.ams_crypt import AMSCrypt
 from core.encoder import MyEncoder
 from exceptions import AddressNotFound
-from app.model import Account, AccountRow, TransactionRow
+from app.model import AccountRow, TransactionRow
 
 accounts_v1_bp = Blueprint("accounts", version=1, url_prefix='accounts')
 
 
 @accounts_v1_bp.get('/<account_address:str>')
-async def get_account_by_address(request: Request, account_address: str):
+async def get_account_by_address(_: Request, account_address: str):
     """Get account info by address.
 
     openapi:
@@ -28,9 +31,14 @@ async def get_account_by_address(request: Request, account_address: str):
     tags:
       - account
     """
-    query = "SELECT * FROM Account WHERE address = :completed"
     async with AMSCore.conn() as conn:
-        row: Optional[Row] = await conn.fetch_one(query=query, values={"completed": account_address})
+        acc_model = await AMSCore.acc_model(account_address, conn=conn)
+        select_query = select([
+            acc_model.c.address, acc_model.c.sequence, acc_model.c.balances, acc_model.c.mnemonic,
+            acc_model.c.created_at, acc_model.c.updated_at
+        ])
+        # query = f"SELECT `address`, `` FROM {acc_model.name} WHERE address = '{account_address}'"
+        row: Optional[Row] = await conn.fetch_one(query=select_query)
     if not row:
         raise AddressNotFound(extra=dict(address=account_address))
     return json(AccountRow.to_json(row), dumps=json_dumps, cls=MyEncoder)
@@ -43,9 +51,10 @@ async def create_account_asset(request: Request, account_address: str):
     """
     asset_str: str = request.form.get('asset')   # TODO valid asset from request form params
     asset_list: List[str] = [a.strip() for a in asset_str.split(',')]
-    search_query = "SELECT * FROM Account WHERE address = :address"
     async with AMSCore.conn() as conn:
-        row: Optional[Row] = await conn.fetch_one(query=search_query, values={"address": account_address})
+        acc_model = await AMSCore.acc_model(account_address, conn=conn)
+        search_query = f"SELECT * FROM {acc_model.name} WHERE address = '{account_address}'"
+        row: Optional[Row] = await conn.fetch_one(query=search_query)
     if not row:
         raise AddressNotFound(extra=dict(address=account_address))
 
@@ -55,29 +64,31 @@ async def create_account_asset(request: Request, account_address: str):
         async with conn.transaction():
             for asset in asset_list:
 
-                query = """UPDATE Account
+                query = """UPDATE :account_name
     SET
         balances=JSON_ARRAY_APPEND(balances, '$', CAST('{"asset": ":asset", "balance": "0.0000000"}' AS JSON)),
         sequence=sequence+1
     WHERE address=':account_address' AND sequence=:sequence AND JSON_SEARCH(balances, 'all', ':asset') IS NULL"""
                 rst = await conn.execute(AMSCore.format_query(query, values={
+                    'account_name': acc_model.name,
                     'asset': asset, 'account_address': account_address, "sequence": sequence
                 }))
                 if rst:
                     sequence += 1
 
-        row: Optional[Row] = await conn.fetch_one(query=search_query, values={"address": account_address})
+        row: Optional[Row] = await conn.fetch_one(query=search_query)
 
     return json(AccountRow.to_json(row), dumps=json_dumps, cls=MyEncoder)
 
 
 @accounts_v1_bp.get('/<account_address:str>/sequence')
-async def account_address_sequence(request: Request, account_address: str):
+async def account_address_sequence(_: Request, account_address: str):
     """
     """
-    query = "SELECT * FROM Account WHERE address = :completed"
     async with AMSCore.conn() as conn:
-        row: Optional[Row] = await conn.fetch_one(query=query, values={"completed": account_address})
+        acc_model = await AMSCore.acc_model(account_address, conn=conn)
+        search_query = f"SELECT * FROM {acc_model.name} WHERE address = '{account_address}'"
+        row: Optional[Row] = await conn.fetch_one(query=search_query)
     if not row:
         raise AddressNotFound(extra=dict(address=account_address))
     return json(
@@ -88,12 +99,13 @@ async def account_address_sequence(request: Request, account_address: str):
 
 
 @accounts_v1_bp.get('/<account_address:str>/balances')
-async def account_address_sequence(request: Request, account_address: str):
+async def account_address_sequence(_: Request, account_address: str):
     """
     """
-    query = "SELECT * FROM Account WHERE address = :completed"
     async with AMSCore.conn() as conn:
-        row: Optional[Row] = await conn.fetch_one(query=query, values={"completed": account_address})
+        acc_model = await AMSCore.acc_model(account_address, conn=conn)
+        search_query = f"SELECT * FROM {acc_model.name} WHERE address = '{account_address}'"
+        row: Optional[Row] = await conn.fetch_one(query=search_query)
     if not row:
         raise AddressNotFound(extra=dict(address=account_address))
     return json(
@@ -102,83 +114,95 @@ async def account_address_sequence(request: Request, account_address: str):
         }, dumps=ujson.dumps
     )
 
+
 @unique
 class Order(str, Enum):
     ASC = "ASC"
     DESC = "DESC"
 
 
+address_schema = Schema(And(str, Keypair.from_public_key))
+
+
 @accounts_v1_bp.get('/<account_address:str>/transactions')
 async def account_address_transactions(request: Request, account_address: str):
-    desc_query = """SELECT * FROM Transaction WHERE
-(
-    `from`=:account_address
-    OR `to`=:account_address
-    OR (`op` is not null AND JSON_SEARCH(`op`, 'one', :account_address) is not null)
-)
-AND `id`<:cursor
-ORDER BY `id` DESC
-LIMIT :limit
-    """
-    asc_query = """SELECT * FROM Transaction WHERE
-    (
-        `from`=:account_address
-        OR `to`=:account_address
-        OR (`op` is not null AND JSON_SEARCH(`op`, 'one', :account_address) is not null)
-    )
-    AND `id`>:cursor
-    ORDER BY `id` ASC
-    LIMIT :limit
-        """
+    # TODO assert txn hash to account json `transactions`
+    try:
+        address_schema.validate(account_address)
+    except SchemaError:
+        raise AddressNotFound(extra=dict(address=account_address))
 
     limit = int(request.args.get('limit', 30))
-    cursor = int(request.args.get('cursor', 0))
+    cursor = request.args.get('cursor', None)
     try:
         order = getattr(Order, request.args.get('order', 'DESC'))
-    except:
+    except AttributeError:
         # return json([])
         raise InvalidUsage(message=f"Wrong args <order>: {request.args.get('order')}")
-    else:
-        if order is Order.DESC:
-            query = desc_query
-            if not cursor:
-                cursor = 18446744073709551615
-        else:
-            query = asc_query
 
     async with AMSCore.conn() as conn:
-        rows: Optional[List[Row]] = await conn.fetch_all(
-            query,
-            values=dict(cursor=cursor, limit=limit, account_address=account_address)
-        )
-    if not rows:
-        return json([])
-        # raise TransactionsOfAccountNotFound(extra=dict(address=account_address))
+        acc_model = await AMSCore.acc_model(account_address, conn=conn)
+        select_acc = select(acc_model.c.transactions).where(acc_model.c.address == account_address)
+        account_txn_row = await conn.fetch_one(select_acc)
+        if not account_txn_row:
+            raise AddressNotFound(extra=dict(address=account_address))
 
-    return json([TransactionRow.to_json(row) for row in rows], dumps=json_dumps, cls=MyEncoder)
+        txn_s = account_txn_row.transactions
+        if not txn_s:
+            return json([])
+
+        if order is Order.DESC:
+            txn_s = reversed(txn_s)     # list_reverseiterator
+
+        rows = []
+        hit_cursor = False
+        for txn in txn_s:
+            if cursor:
+                if not hit_cursor:
+                    if txn == cursor:
+                        hit_cursor = True
+                        continue    # not include cursor
+                    else:
+                        continue
+
+            txn_model = await AMSCore.txn_model(txn, conn=conn)
+            # select_txn = select(txn_model).where(txn_model.c.hash == txn)
+            select_txn = f"""SELECT * FROM {txn_model} WHERE `hash`='{txn}'"""
+            txn_row = await conn.fetch_one(select_txn)
+            if txn_row:
+                rows.append(txn_row)
+            else:
+                logger.error(f"{txn_model} {txn} of Account {account_address} NOT FOUND: {select_txn}")
+            if len(rows) >= limit:
+                break
+
+    return json(
+        [TransactionRow.to_json(row, replace_id_with_hash=True) for row in rows],
+        dumps=json_dumps, cls=MyEncoder
+    )
 
 
 @accounts_v1_bp.post('/')
-async def create_account(request: Request):
+async def create_account(_: Request):
     """
 
     """
     s_address: Keypair = Keypair.random()
-
-    query = Account.insert()
-    values = {
-        "address": s_address.public_key,
-        "sequence": 0,
-        "secret": ams_crypt.aes_encrypt(
-            s_address.secret,
-            AMSCrypt.account_secret_aes_key(),
-            AMSCrypt.account_secret_aes_iv()).decode(),
-        "balances": [],
-        "mnemonic": s_address.generate_mnemonic_phrase()
-    }
     async with AMSCore.conn() as conn:
+        acc_model = await AMSCore.acc_model(s_address.public_key, conn=conn)
+        query = acc_model.insert()
+        values = {
+            "address": s_address.public_key,
+            "sequence": 0,
+            "secret": ams_crypt.aes_encrypt(
+                s_address.secret,
+                AMSCrypt.account_secret_aes_key(),
+                AMSCrypt.account_secret_aes_iv()).decode(),
+            "balances": [],
+            "mnemonic": s_address.generate_mnemonic_phrase()
+        }
         await conn.execute(query=query, values=values)
-        query = Account.select().where(Account.c.address == values['address'])
+        query = acc_model.select().where(acc_model.c.address == values['address'])
         row: Optional[Row] = await conn.fetch_one(query=query)
     if not row:
         raise AddressNotFound(extra=dict(address=values['address']))
