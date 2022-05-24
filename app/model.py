@@ -104,7 +104,8 @@ class AccountRow:
         if isinstance(d_row['balances'], str):
             d_row['balances'] = json.loads(d_row['balances'])
         if not secret:
-            d_row['secret'] = None
+            if 'secret' in d_row:
+                d_row.pop('secret', None)
         else:
             if decrypt_secret:
                 d_row['secret'] = aes_decrypt(

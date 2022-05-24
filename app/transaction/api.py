@@ -247,6 +247,7 @@ async def bulk_create_transaction(request: Request):
         if from_addr not in from_to_set:
             raise BulkTransactionsFromAddress(extra=dict(from_addr=from_addr))
 
+        # TODO set global redis lock every from,to,op[from],op[to]
         async with AMSCore.conn() as conn:
             transaction_model = await AMSCore.txn_model(txn_hash=txn_hash, conn=conn)
             acc_model = await AMSCore.acc_model(address=from_addr, conn=conn)
