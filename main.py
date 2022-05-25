@@ -4,13 +4,13 @@ from pathlib import Path
 from sanic import Sanic, Blueprint
 from databases import Database
 from sanic.handlers import ErrorHandler
-from sqlalchemy.sql.ddl import DropTable, CreateTable
+from sqlalchemy.sql.ddl import DropTable, CreateTable, CreateIndex
 from loguru import logger
+import redis.asyncio as redis
 
 from app.account.api import accounts_v1_bp
 from app.transaction.api import transactions_v1_bp
 from app.model import Transaction, Account
-
 from config import settings
 from core.log import LOGGING_CONFIG, fmt
 
@@ -39,8 +39,9 @@ database = Database(
     min_size=settings.DB_MIN_CONN,
     max_size=settings.DB_MAX_CONN,
     pool_recycle=settings.DB_RECYCLE_SECONDS
-
 )
+
+redis_client = redis.Redis.from_url(settings.REDIS_URL)
 
 
 @app.before_server_start
@@ -56,15 +57,35 @@ async def setup_db(app_, _):
             print(CreateTable(Account))
             print(CreateTable(Transaction))
             await conn.execute(CreateTable(Account, if_not_exists=True))
+            if Account.indexes:
+                for index in Account.indexes:
+                    await conn.execute(CreateIndex(index))
             await conn.execute(CreateTable(Transaction, if_not_exists=True))
+            if Transaction.indexes:
+                for index in Transaction.indexes:
+                    await conn.execute(CreateIndex(index))
 
 
 @app.after_server_stop
-async def setup_db(app_, _):
+async def stop_db(app_, _):
     logger.info('db: disconnecting ...')
     await database.disconnect()
     logger.info(f'db: connection {database.is_connected}')
     app_.ctx.database = None
+
+
+@app.before_server_start
+async def ping_redis(app_, _):
+    logger.info('redis: ping ...')
+    logger.info(f"redis: ping successful: {await redis_client.ping()}")
+    app_.ctx.redis = redis_client
+
+
+@app.after_server_stop
+async def stop_redis(app_, _):
+    logger.info('redis: closing ...')
+    await app_.ctx.redis.close()
+    app_.ctx.redis = None
 
 
 class AMSErrorHandler(ErrorHandler):

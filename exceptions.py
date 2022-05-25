@@ -79,3 +79,11 @@ class BulkTransactionsFromAddress(SanicException):
     @property
     def message(self):
         return f"Op must contains from address. {self.extra.get('from_addr')}"
+
+
+class BulkTransactionsLockFailed(SanicException):
+    status_code = 40010
+
+    @property
+    def message(self):
+        return f"Lock from address failed. {self.extra.get('from_addr')}"

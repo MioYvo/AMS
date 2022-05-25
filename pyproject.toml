@@ -19,6 +19,8 @@ base58 = "^2.1.1"
 stellar-sdk = "^8.0.0"
 schema = "^0.7.5"
 loguru = "^0.6.0"
+redis = "^4.3.1"
+types-redis = "^4.2.5"
 
 [tool.poetry.dev-dependencies]
 #locust = "^2.8.6"
