@@ -13,6 +13,7 @@ from app.account.api import accounts_v1_bp
 from app.transaction.api import transactions_v1_bp
 from app.model import Transaction, Account
 from app.telegram import send_from_redis_to_telegram
+from app.transaction.faucet import transactions_faucet_v1_bp
 from clients import database, redis_client
 from config import settings
 from core.log import LOGGING_CONFIG, fmt
@@ -28,7 +29,7 @@ logger.add(
 app = Sanic(settings.APP_NAME, log_config=LOGGING_CONFIG)
 app.config.FALLBACK_ERROR_FORMAT = "json"
 
-bp = Blueprint.group(accounts_v1_bp, transactions_v1_bp, url_prefix='/ams')
+bp = Blueprint.group(accounts_v1_bp, transactions_v1_bp, transactions_faucet_v1_bp, url_prefix='/ams')
 app.blueprint(bp)
 scheduler = SanicScheduler(app)
 
