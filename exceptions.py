@@ -87,3 +87,19 @@ class BulkTransactionsLockFailed(SanicException):
     @property
     def message(self):
         return f"Lock from address failed. {self.extra.get('from_addr')}"
+
+
+class InvalidTransaction(SanicException):
+    status_code = 40011
+
+    @property
+    def message(self):
+        return f"Invalid Transaction: {self.extra.get('txn_hash')}"
+
+
+class InvalidAccount(SanicException):
+    status_code = 40012
+
+    @property
+    def message(self):
+        return f"Invalid Account: {self.extra.get('addr')}"

@@ -32,14 +32,19 @@ async def get_account_by_address(_: Request, account_address: str):
       - account
     """
     async with AMSCore.conn() as conn:
-        acc_model = await AMSCore.acc_model(account_address, conn=conn)
-        select_query = select([
-            acc_model.c.address, acc_model.c.sequence, acc_model.c.balances,
-            acc_model.c.created_at, acc_model.c.updated_at
-        ]).where(acc_model.c.address == account_address)
+        try:
+            Keypair.from_public_key(account_address)
+        except Exception:
+            raise AddressNotFound(extra=dict(address=account_address))
+        else:
+            acc_model = await AMSCore.acc_model(account_address, conn=conn)
+        select_query = select(acc_model).where(acc_model.c.address == account_address)
         row: Optional[Row] = await conn.fetch_one(query=select_query)
     if not row:
         raise AddressNotFound(extra=dict(address=account_address))
+    else:
+        await AMSCore.validate_acc_row(row)
+
     return json(AccountRow.to_json(row), dumps=json_dumps, cls=MyEncoder)
 
 
@@ -60,8 +65,10 @@ async def create_account(_: Request):
                 AMSCrypt.account_secret_aes_key(),
                 AMSCrypt.account_secret_aes_iv()).decode(),
             "balances": [],
-            "mnemonic": s_address.generate_mnemonic_phrase()
+            "mnemonic": s_address.generate_mnemonic_phrase(),
+            "transactions": [],
         }
+        _, values['hash'], _ = AMSCore.build_acc_hash(**values)
         await conn.execute(query=query, values=values)
         select_query = select([
             acc_model.c.address, acc_model.c.sequence, acc_model.c.balances, acc_model.c.mnemonic,
@@ -72,7 +79,8 @@ async def create_account(_: Request):
         row: Optional[Row] = await conn.fetch_one(query=select_query)
     if not row:
         raise AddressNotFound(extra=dict(address=values['address']))
-    return json(AccountRow.to_json(row, secret=True, decrypt_secret=True), dumps=json_dumps, status=201, cls=MyEncoder)
+    return json(AccountRow.to_json(row, secret=True, decrypt_secret=True, mnemonic=True),
+                dumps=json_dumps, status=201, cls=MyEncoder)
 
 
 @accounts_v1_bp.post('/<account_address:str>/asset')
@@ -84,15 +92,17 @@ async def create_account_asset(request: Request, account_address: str):
     asset_list: List[str] = [a.strip() for a in asset_str.split(',')]
     async with AMSCore.conn() as conn:
         acc_model = await AMSCore.acc_model(account_address, conn=conn)
-        select_query = select([acc_model.c.address, acc_model.c.sequence]).where(acc_model.c.address == account_address)
+        select_query = select(acc_model).where(acc_model.c.address == account_address)
         # search_query = f"SELECT * FROM {acc_model.name} WHERE address = '{account_address}'"
         row: Optional[Row] = await conn.fetch_one(query=select_query)
-    if not row:
-        raise AddressNotFound(extra=dict(address=account_address))
 
-    sequence: int = row.sequence
+        if not row:
+            raise AddressNotFound(extra=dict(address=account_address))
+        else:
+            await AMSCore.validate_acc_row(row)
 
-    async with AMSCore.conn() as conn:
+        sequence: int = row.sequence
+
         async with conn.transaction():
             for asset in asset_list:
 
@@ -107,10 +117,11 @@ async def create_account_asset(request: Request, account_address: str):
                 }))
                 if rst:
                     sequence += 1
-        row: Optional[Row] = await conn.fetch_one(query=select([
-            acc_model.c.address, acc_model.c.sequence, acc_model.c.balances, acc_model.c.mnemonic,
-            acc_model.c.created_at, acc_model.c.updated_at
-        ]).where(acc_model.c.address == account_address))
+            # update hash
+            await AMSCore.acc_rehash(conn=conn, model=acc_model, address=account_address)
+        # fetch rst
+        row: Optional[Row] = await conn.fetch_one(
+            query=select(acc_model).where(acc_model.c.address == account_address))
 
     return json(AccountRow.to_json(row), dumps=json_dumps, cls=MyEncoder)
 
@@ -121,10 +132,13 @@ async def account_address_sequence(_: Request, account_address: str):
     """
     async with AMSCore.conn() as conn:
         acc_model = await AMSCore.acc_model(account_address, conn=conn)
-        search_query = f"SELECT * FROM {acc_model.name} WHERE address = '{account_address}'"
-        row: Optional[Row] = await conn.fetch_one(query=search_query)
+        select_query = select(acc_model).where(acc_model.c.address == account_address)
+        row: Optional[Row] = await conn.fetch_one(query=select_query)
     if not row:
         raise AddressNotFound(extra=dict(address=account_address))
+    else:
+        await AMSCore.validate_acc_row(row)
+
     return json(
         {
             "sequence": row.sequence,
@@ -138,10 +152,12 @@ async def account_address_sequence(_: Request, account_address: str):
     """
     async with AMSCore.conn() as conn:
         acc_model = await AMSCore.acc_model(account_address, conn=conn)
-        search_query = f"SELECT * FROM {acc_model.name} WHERE address = '{account_address}'"
+        search_query = select(acc_model).where(acc_model.c.address == account_address)
         row: Optional[Row] = await conn.fetch_one(query=search_query)
     if not row:
         raise AddressNotFound(extra=dict(address=account_address))
+    else:
+        await AMSCore.validate_acc_row(row)
     return json(
         {
             "balances": ujson.loads(row.balances),
@@ -176,10 +192,12 @@ async def account_address_transactions(request: Request, account_address: str):
 
     async with AMSCore.conn() as conn:
         acc_model = await AMSCore.acc_model(account_address, conn=conn)
-        select_acc = select(acc_model.c.transactions).where(acc_model.c.address == account_address)
+        select_acc = select(acc_model).where(acc_model.c.address == account_address)
         account_txn_row = await conn.fetch_one(select_acc)
         if not account_txn_row:
             raise AddressNotFound(extra=dict(address=account_address))
+        else:
+            await AMSCore.validate_acc_row(account_txn_row)
 
         txn_s = account_txn_row.transactions
         if not txn_s:
@@ -200,13 +218,11 @@ async def account_address_transactions(request: Request, account_address: str):
                         continue
 
             txn_model = await AMSCore.txn_model(txn, conn=conn)
-            # select_txn = select(txn_model).where(txn_model.c.hash == txn)
-            select_txn = f"""SELECT * FROM {txn_model} WHERE `hash`='{txn}'"""
-            txn_row = await conn.fetch_one(select_txn)
+            txn_row = await conn.fetch_one(select(txn_model).where(txn_model.c.hash == txn))
             if txn_row:
                 rows.append(txn_row)
             else:
-                logger.error(f"{txn_model} {txn} of Account {account_address} NOT FOUND: {select_txn}")
+                logger.error(f"{txn_model} {txn} of Account {account_address} NOT FOUND")
             if len(rows) >= limit:
                 break
 

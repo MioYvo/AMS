@@ -9,6 +9,9 @@ RECREATE_TABLES = false
 TXN_EXPIRED_SECONDS = 300
 AMS_DECIMAL = "DECIMAL(23,7)"
 AMS_BULK_TXN_LOCK_NAME = "AMS::bulk::txn::{from_addr}"
+AMS_MSG_KEY_NAME = "AMS::telegram::msg"
+PATH_TO_PERSISTENCE = 'persistence'
+AMS_FINANCE_ADDR = "Finance"
 
 [development]
 DB_NAME = 'amx'
@@ -20,6 +23,10 @@ ACCOUNT_SECRET_AES_KEY = 'secrets/key'
 ACCOUNT_SECRET_AES_IV = 'secrets/iv'
 AMS_BULK_FAKE_TO_ADDR = "GBJ3DU75ADBVPTAHIC4YXBLJD2H2W6RLRLOPGKNS5723X3IKMATXL636"
 REDIS_URL = 'redis://localhost:6379/0'
+AMS_BOT_TOKEN = '5355750399:AAFKdRU6lvYNmWGOI-qzmxLv02m1Q4ejFws'    # @AMS_test_warning_3po_bot
+AMS_BOT_GROUP = -679221817    # AMS_Warning_test
+TG_API_ID = '14441406'
+TG_API_TOKEN = '86ef6044a9ecfb032d8577dd4b3b81d6'
 
 [pdxdev]
 DB_NAME = 'amx'
@@ -31,6 +38,10 @@ ACCOUNT_SECRET_AES_KEY = '/run/secrets/ams_account_secret_key'
 ACCOUNT_SECRET_AES_IV = '/run/secrets/ams_account_secret_iv'
 AMS_BULK_FAKE_TO_ADDR = "GBVS3UUYHQCU25QZSD6DLPWKMA7R3OADPNKSGV6WT2R2WD6545WXX3SZ"
 REDIS_URL = 'redis://localhost:6379/0'
+AMS_BOT_TOKEN = '5355750399:AAFKdRU6lvYNmWGOI-qzmxLv02m1Q4ejFws'    # @AMS_test_warning_3po_bot
+AMS_BOT_GROUP = -679221817    # AMS_Warning_test
+TG_API_ID = '14441406'
+TG_API_TOKEN = '86ef6044a9ecfb032d8577dd4b3b81d6'
 
 [production]
 DB_NAME = 'amx'
@@ -41,3 +52,7 @@ DB_PASSWD = 'gjZl6qzF760HUX1KjZpRZJfbV'
 ACCOUNT_SECRET_AES_KEY = '/run/secrets/ams_account_secret_key'
 ACCOUNT_SECRET_AES_IV = '/run/secrets/ams_account_secret_iv'
 REDIS_URL = 'redis://[[username]:[password]]@localhost:6379/0'
+AMS_BOT_TOKEN = '5284705571:AAGQc3RWH6sBRAQ3xqxISuKElS9Hv2jnJ3I'    # @AMS_prod_warning_3po_bot
+AMS_BOT_GROUP = -797482686    # AMS_Warning
+TG_API_ID = '14441406'
+TG_API_TOKEN = '86ef6044a9ecfb032d8577dd4b3b81d6'

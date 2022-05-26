@@ -1,16 +1,19 @@
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 from sanic import Sanic, Blueprint
-from databases import Database
 from sanic.handlers import ErrorHandler
 from sqlalchemy.sql.ddl import DropTable, CreateTable, CreateIndex
 from loguru import logger
-import redis.asyncio as redis
+from sanic_scheduler import SanicScheduler, task
+from telethon import TelegramClient
 
 from app.account.api import accounts_v1_bp
 from app.transaction.api import transactions_v1_bp
 from app.model import Transaction, Account
+from app.telegram import send_from_redis_to_telegram
+from clients import database, redis_client
 from config import settings
 from core.log import LOGGING_CONFIG, fmt
 
@@ -22,26 +25,12 @@ logger.add(
     format=fmt, diagnose=False, backtrace=False
 )
 
-
 app = Sanic(settings.APP_NAME, log_config=LOGGING_CONFIG)
 app.config.FALLBACK_ERROR_FORMAT = "json"
 
 bp = Blueprint.group(accounts_v1_bp, transactions_v1_bp, url_prefix='/ams')
 app.blueprint(bp)
-
-db_url = f'mysql+aiomysql://{settings.DB_USER}:{settings.DB_PASSWD}@' \
-         f'{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}'
-
-database = Database(
-    db_url,
-    ssl=False,
-    echo='error',
-    min_size=settings.DB_MIN_CONN,
-    max_size=settings.DB_MAX_CONN,
-    pool_recycle=settings.DB_RECYCLE_SECONDS
-)
-
-redis_client = redis.Redis.from_url(settings.REDIS_URL)
+scheduler = SanicScheduler(app)
 
 
 @app.before_server_start
@@ -88,6 +77,27 @@ async def stop_redis(app_, _):
     app_.ctx.redis = None
 
 
+@app.after_server_start
+async def start_bot(app_, _):
+    # noinspection PyUnresolvedReferences
+    app_.ctx.tg_client = await TelegramClient(
+        settings.DYNACONF_NAMESPACE,
+        # session=str(Path(settings.PATH_TO_PERSISTENCE)/settings.DYNACONF_NAMESPACE),
+        api_id=settings.TG_API_ID, api_hash=settings.TG_API_TOKEN,
+        proxy=("socks5", '127.0.0.1', 7890)
+    ).start(bot_token=settings.AMS_BOT_TOKEN)
+
+
+@app.after_server_stop
+async def stop_bot(app_, _):
+    await app_.ctx.tg_client.disconnect()
+
+
+@task(timedelta(seconds=10), start=timedelta(seconds=5))
+async def add_bot_sender(_):
+    await send_from_redis_to_telegram()
+
+
 class AMSErrorHandler(ErrorHandler):
     def default(self, request, exception):
         self.log(request, exception)
@@ -111,5 +121,4 @@ app.error_handler = AMSErrorHandler()
 
 
 if __name__ == "__main__":
-    logger.info(db_url)
     app.run(host="0.0.0.0", port=8000, debug=False, access_log=False)
