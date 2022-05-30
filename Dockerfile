@@ -15,7 +15,9 @@ RUN rpm --rebuilddb && \
     yum -y autoremove && \
     yum clean all && \
     rm -rf /var/cache/yum && \
-    find . | grep -E "(__pycache__|\.pyc|\.pyo$)" | xargs rm -rf
+    find . | grep -E "(__pycache__|\.pyc|\.pyo$)" | xargs rm -rf && \
+    mkdir log && \
+    chmod a+wrx log
 
 COPY app /app/ams/app
 COPY core /app/ams/core

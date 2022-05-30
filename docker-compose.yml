@@ -48,6 +48,8 @@ services:
         max-file: "1"
     expose:
       - 8000
+    volumes:
+      - "/home/pdxpytest/AMS/log:/app/ams/log"
     secrets:
       - ams_account_secret_key
       - ams_account_secret_iv

@@ -1,33 +1,37 @@
+import sys
+from datetime import timedelta
+from pathlib import Path
+
 from sanic import Sanic, Blueprint
-from databases import Database
 from sanic.handlers import ErrorHandler
-from sanic.log import logger
-from sqlalchemy.sql.ddl import DropTable, CreateTable
+from sqlalchemy.sql.ddl import DropTable, CreateTable, CreateIndex
+from loguru import logger
+from sanic_scheduler import SanicScheduler, task
+from telethon import TelegramClient
 
 from app.account.api import accounts_v1_bp
 from app.transaction.api import transactions_v1_bp
 from app.model import Transaction, Account
-
+from app.telegram import send_from_redis_to_telegram
+from app.transaction.faucet import transactions_faucet_v1_bp
+from clients import database, redis_client
 from config import settings
+from core.log import LOGGING_CONFIG, fmt
 
-app = Sanic(settings.APP_NAME)
-app.config.FALLBACK_ERROR_FORMAT = "json"
-# app.config.DEBUG = True
+logger.remove(0)    # remove default stderr sink
+logger.add(sys.stderr, level='INFO', format=fmt, diagnose=False, backtrace=False)
 
-bp = Blueprint.group(accounts_v1_bp, transactions_v1_bp, url_prefix='/ams')
-app.blueprint(bp)
-
-db_url = f'mysql+aiomysql://{settings.DB_USER}:{settings.DB_PASSWD}@' \
-         f'{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}'
-
-database = Database(
-    db_url,
-    ssl=False,
-    min_size=settings.DB_MIN_CONN,
-    max_size=settings.DB_MAX_CONN,
-    pool_recycle=settings.DB_RECYCLE_SECONDS
-
+logger.add(
+    Path(".").absolute()/"log"/"ams.log", rotation="50 MB", encoding='utf-8', colorize=False, level='INFO',
+    format=fmt, diagnose=False, backtrace=False
 )
+
+app = Sanic(settings.APP_NAME, log_config=LOGGING_CONFIG)
+app.config.FALLBACK_ERROR_FORMAT = "json"
+
+bp = Blueprint.group(accounts_v1_bp, transactions_v1_bp, transactions_faucet_v1_bp, url_prefix='/ams')
+app.blueprint(bp)
+scheduler = SanicScheduler(app)
 
 
 @app.before_server_start
@@ -43,15 +47,56 @@ async def setup_db(app_, _):
             print(CreateTable(Account))
             print(CreateTable(Transaction))
             await conn.execute(CreateTable(Account, if_not_exists=True))
+            if Account.indexes:
+                for index in Account.indexes:
+                    await conn.execute(CreateIndex(index))
             await conn.execute(CreateTable(Transaction, if_not_exists=True))
+            if Transaction.indexes:
+                for index in Transaction.indexes:
+                    await conn.execute(CreateIndex(index))
 
 
 @app.after_server_stop
-async def setup_db(app_, _):
+async def stop_db(app_, _):
     logger.info('db: disconnecting ...')
     await database.disconnect()
     logger.info(f'db: connection {database.is_connected}')
     app_.ctx.database = None
+
+
+@app.before_server_start
+async def ping_redis(app_, _):
+    logger.info('redis: ping ...')
+    logger.info(f"redis: ping successful: {await redis_client.ping()}")
+    app_.ctx.redis = redis_client
+
+
+@app.after_server_stop
+async def stop_redis(app_, _):
+    logger.info('redis: closing ...')
+    await app_.ctx.redis.close()
+    app_.ctx.redis = None
+
+
+@app.after_server_start
+async def start_bot(app_, _):
+    # noinspection PyUnresolvedReferences
+    app_.ctx.tg_client = await TelegramClient(
+        settings.DYNACONF_NAMESPACE,
+        # session=str(Path(settings.PATH_TO_PERSISTENCE)/settings.DYNACONF_NAMESPACE),
+        api_id=settings.TG_API_ID, api_hash=settings.TG_API_TOKEN,
+        proxy=("socks5", '127.0.0.1', 7890)
+    ).start(bot_token=settings.AMS_BOT_TOKEN)
+
+
+@app.after_server_stop
+async def stop_bot(app_, _):
+    await app_.ctx.tg_client.disconnect()
+
+
+@task(timedelta(seconds=10), start=timedelta(seconds=5))
+async def add_bot_sender(_):
+    await send_from_redis_to_telegram()
 
 
 class AMSErrorHandler(ErrorHandler):
@@ -77,5 +122,4 @@ app.error_handler = AMSErrorHandler()
 
 
 if __name__ == "__main__":
-    logger.info(db_url)
-    app.run(host="0.0.0.0", port=8000)
+    app.run(host="0.0.0.0", port=8000, debug=False, access_log=False)

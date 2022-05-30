@@ -6,7 +6,7 @@ class AddressNotFound(SanicException):
 
     @property
     def message(self):
-        return f"Address {self.extra['address']} not found"
+        return f"Address {self.extra.get('address', '')} not found"
 
 
 class AssetNotTrusted(SanicException):
@@ -14,7 +14,7 @@ class AssetNotTrusted(SanicException):
 
     @property
     def message(self):
-        return f"Account {self.extra['addr']}'s Asset {self.extra['asset']} not trusted"
+        return f"Account {self.extra.pop('addr', '')}'s Asset {self.extra.pop('asset', '')} not trusted, {self.extra}"
 
 
 class TransactionNotFound(SanicException):
@@ -70,4 +70,36 @@ class TransactionsSelfTransfer(SanicException):
 
     @property
     def message(self):
-        return "Cannot transfer to self"
+        return f"Cannot transfer to self {self.extra.get('addr')}"
+
+
+class BulkTransactionsFromAddress(SanicException):
+    status_code = 40009
+
+    @property
+    def message(self):
+        return f"Op must contains from address. {self.extra.get('from_addr')}"
+
+
+class BulkTransactionsLockFailed(SanicException):
+    status_code = 40010
+
+    @property
+    def message(self):
+        return f"Lock from address failed. {self.extra.get('from_addr')}"
+
+
+class InvalidTransaction(SanicException):
+    status_code = 40011
+
+    @property
+    def message(self):
+        return f"Invalid Transaction: {self.extra.get('txn_hash')}"
+
+
+class InvalidAccount(SanicException):
+    status_code = 40012
+
+    @property
+    def message(self):
+        return f"Invalid Account: {self.extra.get('addr')}"

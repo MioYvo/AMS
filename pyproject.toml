@@ -16,7 +16,14 @@ arrow = "^1.2.2"
 ecdsa = "^0.17.0"
 pycryptodome = "^3.14.1"
 base58 = "^2.1.1"
-stellar-sdk = "^7.0.3"
+stellar-sdk = "^8.0.0"
+schema = "^0.7.5"
+loguru = "^0.6.0"
+redis = "^4.3.1"
+types-redis = "^4.2.5"
+sanic-scheduler = "^1.0.7"
+telethon = {extras = ["socks"], version = "^1.24.0"}
+python-socks = {extras = ["asyncio"], version = "^2.0.3"}
 
 [tool.poetry.dev-dependencies]
 #locust = "^2.8.6"
