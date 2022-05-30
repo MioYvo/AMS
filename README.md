@@ -46,4 +46,5 @@ Expensive, compared with AWS MySQL by our boss and OPs :|
   * Send warning messages to telegram group
 
 Architecture
-![Architecture](http://processon.com/chart_image/62443d2ae0b34d0730e8a9c1.png)
+
+[//]: # (![Architecture]&#40;http://processon.com/chart_image/62443d2ae0b34d0730e8a9c1.png&#41;)
