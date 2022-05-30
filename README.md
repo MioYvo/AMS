@@ -9,8 +9,8 @@ We used to use blockchain as the storage and management of user assets.Now we ha
 * API
   * [Sanic]() for asynchronous api services.
   * [encode databases[aiomysql]](https://github.com/encode/databases) for asynchronous MySQL support.
-* Reverse Proxy
-  * [Traefik](https://github.com/traefik/traefik) with Docker for automatically and dynamically proxy.
+* Reverse Proxy and load balancer
+  * [Traefik](https://github.com/traefik/traefik) with Docker for automatically and dynamically proxy and load balancer.
 
 ### Why not blockchain?
 #### Expensive
