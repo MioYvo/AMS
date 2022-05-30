@@ -20,7 +20,7 @@ Our blockchain base consumes a lot of disk and memory resources, it's a high mon
 
 This is the main reason.
 #### Slow
-Broadcast a transaction to blockchain is very slow. Our users need to wait *minutes* to confirm their asset transferring is done.
+Broadcast a transaction to blockchain is very slow. Our users need to wait *minutes* to confirm their asset transfer is done.
 
 ### Why not PostgreSQL or MongoDB?
 Expensive, compared with AWS MySQL by our boss and OPs :|
@@ -39,7 +39,10 @@ Expensive, compared with AWS MySQL by our boss and OPs :|
   * High concurrency
   * Transaction
   * JSON support
-  * Split tables automatically
+  * Split tables automatically by datetime or mod or both
+* Asset
+  * Validate Account and Transaction by customized hash
+  * Single and bulk transactions transfer
 
 Architecture
 ![Architecture](http://processon.com/chart_image/62443d2ae0b34d0730e8a9c1.png)
