@@ -1,6 +1,7 @@
 import sys
 from datetime import timedelta
 from pathlib import Path
+sys.path.insert(0, str(Path().absolute().parent))
 
 from sanic import Sanic, Blueprint
 from sanic.handlers import ErrorHandler
@@ -9,20 +10,20 @@ from loguru import logger
 from sanic_scheduler import SanicScheduler, task
 from telethon import TelegramClient
 
-from app.account.api import accounts_v1_bp
-from app.transaction.api import transactions_v1_bp
-from app.model import Transaction, Account
-from app.telegram import send_from_redis_to_telegram
-from app.transaction.faucet import transactions_faucet_v1_bp
-from clients import database, redis_client
-from config import settings
-from core.log import LOGGING_CONFIG, fmt
+from AMS.app.account.api import accounts_v1_bp
+from AMS.app.transaction.api import transactions_v1_bp
+from AMS.app.model import Transaction, Account
+from AMS.app.telegram import send_from_redis_to_telegram
+from AMS.app.transaction.faucet import transactions_faucet_v1_bp
+from AMS.clients import database, redis_client
+from AMS.config import settings
+from AMS.core.log import LOGGING_CONFIG, fmt
 
 logger.remove(0)    # remove default stderr sink
 logger.add(sys.stderr, level='INFO', format=fmt, diagnose=False, backtrace=False)
 
 logger.add(
-    Path(".").absolute()/"log"/"ams.log", rotation="50 MB", encoding='utf-8', colorize=False, level='INFO',
+    Path("..").absolute() / "log" / "ams.log", rotation="50 MB", encoding='utf-8', colorize=False, level='INFO',
     format=fmt, diagnose=False, backtrace=False
 )
 

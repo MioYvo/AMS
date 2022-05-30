@@ -14,11 +14,11 @@ from sqlalchemy.engine import Row
 from schema import Schema, SchemaError, Use, And, Optional as OptionalSchema
 from stellar_sdk import Keypair
 
-from app.model import TransactionRow
-from config import settings
-from core import AMSCore
-from core.encoder import MyEncoder
-from exceptions import TransactionNotFound, TransactionsBuildFailed, AssetNotTrusted, \
+from AMS.app.model import TransactionRow
+from AMS.config import settings
+from AMS.core import AMSCore
+from AMS.core.encoder import MyEncoder
+from AMS.exceptions import TransactionNotFound, TransactionsBuildFailed, AssetNotTrusted, \
     InsufficientFunds, TransactionsSendFailed, TransactionsSelfTransfer, AddressNotFound, BulkTransactionsFromAddress, \
     BulkTransactionsLockFailed
 

@@ -10,7 +10,7 @@ from dateutil import tz
 from sqlalchemy import text, UniqueConstraint
 from sqlalchemy.engine import Row
 
-from core.ams_crypt import AMSCrypt, aes_decrypt
+from AMS.core.ams_crypt import AMSCrypt, aes_decrypt
 
 metadata = sqlalchemy.MetaData()
 

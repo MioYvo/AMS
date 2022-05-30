@@ -12,10 +12,10 @@ from stellar_sdk import Keypair
 from pymysql import IntegrityError
 from json import dumps as json_dumps
 
-from app.model import Account, TransactionRow
-from config import settings
-from core import AMSCore, MyEncoder
-from exceptions import TransactionsBuildFailed, AddressNotFound, AssetNotTrusted, TransactionsSendFailed
+from AMS.app.model import Account, TransactionRow
+from AMS.config import settings
+from AMS.core import AMSCore, MyEncoder
+from AMS.exceptions import TransactionsBuildFailed, AddressNotFound, AssetNotTrusted, TransactionsSendFailed
 
 DEM = settings.AMS_DECIMAL
 transactions_faucet_v1_bp = Blueprint("faucet", version=1, url_prefix='faucet')

@@ -151,3 +151,5 @@ cython_debug/
 /poetry.lock
 *.bin
 /log/
+/AMS/*.session
+/AMS/*.session-journal

@@ -1,8 +1,8 @@
 from asyncio import sleep
 from enum import Enum
 
-from config import settings
-from clients import redis_client, bot
+from AMS.config import settings
+from AMS.clients import redis_client, bot
 
 msgs_key = settings.AMS_MSG_KEY_NAME
 group_id = settings.AMS_BOT_GROUP

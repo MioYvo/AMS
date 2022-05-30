@@ -16,11 +16,11 @@ from sqlalchemy.engine import Row
 from sqlalchemy.sql.ddl import CreateTable, CreateIndex
 from stellar_sdk import Keypair
 
-from app.model import Transaction, Account
-from app.telegram import send_msg, AMSWarningLevel
-from config import settings
-from core.encoder import MyEncoder
-from exceptions import TransactionsBuildFailed, TransactionsExpired, InvalidTransaction, InvalidAccount
+from AMS.app.model import Transaction, Account
+from AMS.app.telegram import send_msg, AMSWarningLevel
+from AMS.config import settings
+from AMS.core.encoder import MyEncoder
+from AMS.exceptions import TransactionsBuildFailed, TransactionsExpired, InvalidTransaction, InvalidAccount
 
 
 class AMSCoreClass:

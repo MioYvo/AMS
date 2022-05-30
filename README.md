@@ -43,6 +43,7 @@ Expensive, compared with AWS MySQL by our boss and OPs :|
 * Asset
   * Validate Account and Transaction by customized hash
   * Single and bulk transactions transfer
+  * Send warning messages to telegram group
 
 Architecture
 ![Architecture](http://processon.com/chart_image/62443d2ae0b34d0730e8a9c1.png)

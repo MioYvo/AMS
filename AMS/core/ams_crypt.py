@@ -8,7 +8,7 @@ from Crypto.PublicKey.RSA import RsaKey
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
 
-from config import settings
+from AMS.config import settings
 
 cipher_select = {
     "PKCS1_v1_5": PKCS1_v1_5,

@@ -19,10 +19,10 @@ RUN rpm --rebuilddb && \
     mkdir log && \
     chmod a+wrx log
 
-COPY app /app/ams/app
-COPY core /app/ams/core
-COPY *.py /app/ams/
-COPY settings.toml /app/ams/
+COPY AMS/app /app/ams/app
+COPY AMS/core /app/ams/core
+COPY AMS/*.py /app/ams/
+COPY AMS/settings.toml /app/ams/
 
 USER nobody
 

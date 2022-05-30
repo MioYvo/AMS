@@ -5,7 +5,7 @@ description = ""
 authors = ["Mio Lau <liurusi.101@gmail.com>"]
 
 [tool.poetry.dependencies]
-python = "^3.9"
+python = "^3.10"
 #fastapi = "^0.75.1"
 sanic = {extras = ["ext"], version = "^22.3.1"}
 #hypercorn = "^0.13.2"

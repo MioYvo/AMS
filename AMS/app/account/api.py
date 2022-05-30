@@ -12,11 +12,11 @@ from sqlalchemy import select
 from sqlalchemy.engine import Row
 from stellar_sdk import Keypair
 
-from core import ams_crypt, AMSCore
-from core.ams_crypt import AMSCrypt
-from core.encoder import MyEncoder
-from exceptions import AddressNotFound
-from app.model import AccountRow, TransactionRow
+from AMS.core import ams_crypt, AMSCore
+from AMS.core.ams_crypt import AMSCrypt
+from AMS.core.encoder import MyEncoder
+from AMS.exceptions import AddressNotFound
+from AMS.app.model import AccountRow, TransactionRow
 
 accounts_v1_bp = Blueprint("accounts", version=1, url_prefix='accounts')
 
